@@ -3831,9 +3831,62 @@ function AdminUserManagementPage({ users, tierPermissions, onApprove, onReject, 
     return <Badge tone="bg-red-50 text-red-700">ถูกปฏิเสธ</Badge>;
   };
 
+  const pendingUsers = users.filter((u) => u.status === "pending");
+
   return (
     <div className="space-y-5">
       <h1 className="text-lg font-semibold text-slate-900">จัดการผู้ใช้งาน</h1>
+
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <p className="text-sm font-medium text-slate-900">คำขอที่รอการอนุมัติ</p>
+          {pendingUsers.length > 0 && (
+            <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{pendingUsers.length}</span>
+          )}
+        </div>
+        {pendingUsers.length === 0 ? (
+          <Card><p className="text-sm text-slate-400">ไม่มีคำขอที่รอการอนุมัติในขณะนี้</p></Card>
+        ) : (
+          <Card className="p-0 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-amber-50 text-amber-700 text-left">
+                    <th className="px-4 py-2.5 font-medium">บริษัท</th>
+                    <th className="px-4 py-2.5 font-medium">ผู้ติดต่อ</th>
+                    <th className="px-4 py-2.5 font-medium">อีเมล</th>
+                    <th className="px-4 py-2.5 font-medium">วันที่สมัคร</th>
+                    <th className="px-4 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingUsers.map((u) => (
+                    <tr key={u.id} className="border-t border-slate-100">
+                      <td className="px-4 py-2.5">{u.companyName}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{u.name}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{u.email}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(u.registeredAt)}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => onReject(u.id)} className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600">
+                            ปฏิเสธ
+                          </button>
+                          <button onClick={() => onApprove(u.id)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-900 text-white">
+                            อนุมัติ
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      <div>
+        <p className="text-sm font-medium text-slate-900 mb-3">ผู้ใช้งานทั้งหมด</p>
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -3868,6 +3921,7 @@ function AdminUserManagementPage({ users, tierPermissions, onApprove, onReject, 
           </table>
         </div>
       </Card>
+      </div>
     </div>
   );
 }
@@ -4192,9 +4246,14 @@ export default function JorPorPrototype() {
         <div className="px-4 sm:px-6 pt-4 flex gap-1 border-b border-slate-200">
           <button
             onClick={() => setAdminView("users")}
-            className={`text-sm px-3 py-2 border-b-2 -mb-px ${adminView === "users" ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-500"}`}
+            className={`flex items-center gap-1.5 text-sm px-3 py-2 border-b-2 -mb-px ${adminView === "users" ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-500"}`}
           >
             จัดการผู้ใช้งาน
+            {users.filter((u) => u.status === "pending").length > 0 && (
+              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
+                {users.filter((u) => u.status === "pending").length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setAdminView("roles")}
