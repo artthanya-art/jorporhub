@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { supabase } from "./lib/supabaseClient";
 import {
   LayoutDashboard, AlertTriangle, HardHat, Wrench, ClipboardCheck,
   Plus, X, Camera, ArrowLeft, ChevronRight, Menu, Users, MapPin, ShieldAlert,
@@ -92,26 +93,50 @@ const PAGE_OPTIONS = [
 ];
 const ALL_PAGE_KEYS = PAGE_OPTIONS.map((p) => p.key);
 
+// แปลงแถวจากตาราง users (join กับ organizations + subscriptions + subscription_plans)
+// ให้เป็นรูปแบบ object ที่โค้ดฝั่งหน้าจอทั้งหมดคาดหวัง (name, companyName, userType ฯลฯ)
+// เพราะชื่อฟิลด์ในฐานข้อมูลจริง (full_name, role, approval_status) ต่างจากชื่อที่ใช้
+// ในหน้าจอ (name, status, userType) ตั้งแต่ตอนออกแบบ schema ครั้งแรก
+function mapUserRow(row) {
+  if (!row) return null;
+  const planName = row.organization?.subscriptions?.[0]?.plan?.name?.toLowerCase() ?? "free";
+  return {
+    id: row.id,
+    name: row.full_name,
+    companyName: row.organization?.name ?? "-",
+    email: row.email,
+    userType: row.role === "super_admin" ? null : planName,
+    status: row.approval_status,
+    isAdmin: row.role === "super_admin",
+    registeredAt: row.created_at ? row.created_at.slice(0, 10) : null,
+  };
+}
+
+const USER_SELECT_QUERY = `
+  id, email, full_name, role, approval_status, created_at,
+  organization:organizations (
+    id, name,
+    subscriptions ( status, plan:subscription_plans ( name ) )
+  )
+`;
+
+async function fetchUserProfile(authUserId) {
+  const { data, error } = await supabase
+    .from("users")
+    .select(USER_SELECT_QUERY)
+    .eq("id", authUserId)
+    .maybeSingle();
+  if (error) {
+    console.error("fetchUserProfile error:", error);
+    return null;
+  }
+  return mapUserRow(data);
+}
+
 // ผู้ใช้แต่ละคน = แต่ละบริษัท (tenant) แยกข้อมูลกันคนละชุดโดยสมบูรณ์ — ไม่มีแนวคิด
 // "หลายคนใช้ร่วมกันในบริษัทเดียว" อีกต่อไป มีเพียงบัญชีแอดมินระบบ (isAdmin) เท่านั้นที่แยกต่างหาก
-const initialUsers = [
-  {
-    id: 1, name: "สมชาย ใจดี", companyName: "บริษัท ABC จำกัด", email: "somchai@company.com", password: "1234",
-    userType: "gold", status: "approved", registeredAt: "2026-01-10", isAdmin: false,
-  },
-  {
-    id: 2, name: "วรรณา ตั้งมั่น", companyName: "บริษัท XYZ จำกัด", email: "wipa@company.com", password: "1234",
-    userType: "free", status: "approved", registeredAt: "2026-02-15", isAdmin: false,
-  },
-  {
-    id: 3, name: "ผู้ดูแลระบบ", companyName: "-", email: "admin@company.com", password: "admin",
-    userType: null, status: "approved", registeredAt: "2026-01-01", isAdmin: true,
-  },
-  {
-    id: 4, name: "ประยุทธ มั่นคง", companyName: "บริษัท ใหม่ จำกัด", email: "newuser@company.com", password: "1234",
-    userType: "free", status: "pending", registeredAt: "2026-07-20", isAdmin: false,
-  },
-];
+// (รายชื่อผู้ใช้จริงตอนนี้มาจาก Supabase ผ่าน fetchAllUsers()/fetchUserProfile() ด้านบนแล้ว
+// ไม่ใช้ mock array นี้อีกต่อไป)
 
 // สิทธิ์การเข้าถึงหน้ากำหนดตาม "ประเภทผู้ใช้งาน" (free/silver/gold) ไม่ใช่รายบุคคล — แก้ไขได้
 // ที่หน้า "จัดการประเภทผู้ใช้งาน" เท่านั้น ผู้ใช้ที่มีประเภทเดียวกันจะเห็นเมนูเหมือนกันทั้งหมด
@@ -298,12 +323,14 @@ const initialTrainingRecords = [
 function getRequiredCourseIds(employee, locations, requirements) {
   const loc = locations.find((l) => l.id === employee.primaryLocationId);
   const locationHazards = loc ? loc.hazards : [];
+  const empPosition = (employee.position || "").trim();
   const ids = new Set();
   requirements.forEach((r) => {
+    const reqPosition = (r.position || "").trim();
     if (r.position && r.hazardType) {
-      if (r.position === employee.position && locationHazards.includes(r.hazardType)) ids.add(r.courseId);
+      if (reqPosition === empPosition && locationHazards.includes(r.hazardType)) ids.add(r.courseId);
     } else if (r.position) {
-      if (r.position === employee.position) ids.add(r.courseId);
+      if (reqPosition === empPosition) ids.add(r.courseId);
     } else if (r.hazardType) {
       if (locationHazards.includes(r.hazardType)) ids.add(r.courseId);
     }
@@ -3879,9 +3906,11 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
 // Training Matrix — หลักสูตรตามตำแหน่งงาน/ความเสี่ยง + สถานะการอบรมของพนักงาน
 // ---------------------------------------------------------------
 
-function TrainingMatrixPage({ employees, locations, courses, requirements, records, onAddRequirement, onRemoveRequirement }) {
+function TrainingMatrixPage({ employees, locations, courses, requirements, records, onAddRequirement, onRemoveRequirement, onUpsertRecord, onDeleteRecord }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ position: "", hazardType: "", courseId: courses[0]?.id ?? "" });
+  const [editingCell, setEditingCell] = useState(null); // { employeeId, courseId } | null
+  const [recordForm, setRecordForm] = useState({ completionDate: todayIso(), expiryDate: "" });
   const positions = [...new Set(employees.map((e) => e.position))];
 
   const submit = () => {
@@ -3897,6 +3926,23 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
   };
 
   const courseName = (id) => courses.find((c) => c.id === id)?.name ?? "-";
+
+  const startEditRecord = (employeeId, courseId) => {
+    const existing = records.find((r) => r.employeeId === employeeId && r.courseId === courseId);
+    setRecordForm({
+      completionDate: existing?.completionDate || todayIso(),
+      expiryDate: existing?.expiryDate || "",
+    });
+    setEditingCell({ employeeId, courseId });
+  };
+
+  const saveRecord = () => {
+    onUpsertRecord(editingCell.employeeId, editingCell.courseId, {
+      completionDate: recordForm.completionDate,
+      expiryDate: recordForm.expiryDate || null,
+    });
+    setEditingCell(null);
+  };
 
   return (
     <div className="space-y-5">
@@ -4023,14 +4069,60 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
                         {requiredIds.length === 0 ? (
                           <span className="text-slate-400">ไม่มีหลักสูตรบังคับ</span>
                         ) : (
-                          <div className="flex flex-col gap-1.5">
+                          <div className="flex flex-col gap-2">
                             {requiredIds.map((cid) => {
                               const status = getTrainingComplianceStatus(emp.id, cid, records);
+                              const isEditingThis = editingCell?.employeeId === emp.id && editingCell?.courseId === cid;
+                              const hasRecord = records.some((r) => r.employeeId === emp.id && r.courseId === cid);
+                              if (isEditingThis) {
+                                return (
+                                  <div key={cid} className="bg-slate-50 rounded-lg p-2.5 space-y-2 max-w-xs">
+                                    <p className="text-xs font-medium text-slate-700">{courseName(cid)}</p>
+                                    <div>
+                                      <label className="text-xs text-slate-500 block mb-0.5">วันที่อบรมผ่าน</label>
+                                      <input
+                                        type="date"
+                                        value={recordForm.completionDate}
+                                        onChange={(e) => setRecordForm({ ...recordForm, completionDate: e.target.value })}
+                                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-slate-500 block mb-0.5">วันหมดอายุ (ถ้ามี)</label>
+                                      <input
+                                        type="date"
+                                        value={recordForm.expiryDate}
+                                        onChange={(e) => setRecordForm({ ...recordForm, expiryDate: e.target.value })}
+                                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs"
+                                      />
+                                    </div>
+                                    <div className="flex justify-end gap-2 pt-1">
+                                      <button onClick={() => setEditingCell(null)} className="text-xs text-slate-500 underline">ยกเลิก</button>
+                                      {hasRecord && (
+                                        <button
+                                          onClick={() => {
+                                            onDeleteRecord(emp.id, cid);
+                                            setEditingCell(null);
+                                          }}
+                                          className="text-xs text-red-600 underline"
+                                        >
+                                          ลบผลอบรม
+                                        </button>
+                                      )}
+                                      <button onClick={saveRecord} className="text-xs bg-slate-900 text-white px-2 py-1 rounded-lg">บันทึก</button>
+                                    </div>
+                                  </div>
+                                );
+                              }
                               return (
-                                <div key={cid} className="flex items-center gap-2">
+                                <button
+                                  key={cid}
+                                  onClick={() => startEditRecord(emp.id, cid)}
+                                  className="flex items-center gap-2 text-left hover:bg-slate-50 rounded px-1 -mx-1 py-0.5"
+                                >
                                   <span>{courseName(cid)}</span>
                                   <Badge tone={trainingStatusTone(status)}>{trainingStatusLabel[status]}</Badge>
-                                </div>
+                                </button>
                               );
                             })}
                           </div>
@@ -4052,27 +4144,44 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
 // Auth: Login / Register / Pending approvals
 // ---------------------------------------------------------------
 
-function LoginPage({ users, onLogin, onGoToRegister }) {
+function LoginPage({ onLogin, onGoToRegister }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const submit = () => {
-    const user = users.find((u) => u.email === email);
-    if (!user || user.password !== password) {
+  const submit = async () => {
+    if (!email.trim() || !password) return;
+    setError(null);
+    setLoading(true);
+
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (signInError) {
+      setLoading(false);
       setError("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
       return;
     }
-    if (user.status === "pending") {
+
+    const profile = await fetchUserProfile(data.user.id);
+    setLoading(false);
+
+    if (!profile) {
+      setError("ไม่พบข้อมูลผู้ใช้งานนี้ในระบบ กรุณาติดต่อผู้ดูแลระบบ");
+      await supabase.auth.signOut();
+      return;
+    }
+    if (profile.status === "pending") {
       setError("บัญชีนี้กำลังรอการอนุมัติจากผู้ดูแลระบบ");
+      await supabase.auth.signOut();
       return;
     }
-    if (user.status === "rejected") {
+    if (profile.status === "rejected") {
       setError("บัญชีนี้ถูกปฏิเสธการเข้าใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
+      await supabase.auth.signOut();
       return;
     }
-    setError(null);
-    onLogin(user);
+    onLogin(profile);
   };
 
   return (
@@ -4096,33 +4205,57 @@ function LoginPage({ users, onLogin, onGoToRegister }) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
           />
         </div>
-        <button onClick={submit} className="w-full text-sm bg-slate-900 text-white px-3 py-2 rounded-lg mb-3">
-          เข้าสู่ระบบ
+        <button
+          onClick={submit}
+          disabled={loading}
+          className="w-full text-sm bg-slate-900 text-white px-3 py-2 rounded-lg mb-3 disabled:opacity-50"
+        >
+          {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
         </button>
         <p className="text-xs text-slate-500 text-center">
           ยังไม่มีบัญชี? <button onClick={onGoToRegister} className="underline text-slate-700">สมัครใช้งาน</button>
         </p>
-        <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400">
-          ตัวอย่างบัญชีทดสอบ (ผู้ดูแลระบบ): admin@company.com / admin
-        </div>
       </Card>
     </div>
   );
 }
 
-function RegisterPage({ onRegister, onGoToLogin }) {
+function RegisterPage({ onGoToLogin }) {
   const [form, setForm] = useState({ name: "", companyName: "", email: "", password: "" });
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.name.trim() || !form.companyName.trim() || !form.email.trim() || !form.password) return;
-    onRegister({
-      id: Date.now(), name: form.name, companyName: form.companyName, email: form.email,
-      password: form.password, userType: "free", status: "pending", registeredAt: todayIso(), isAdmin: false,
+    if (form.password.length < 6) {
+      setError("รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+
+    // metadata นี้จะถูกอ่านโดย trigger ฝั่งฐานข้อมูล (handle_new_auth_user) เพื่อ
+    // สร้างบริษัทใหม่ + ผูกแพ็กเกจ Free + สร้างแถวผู้ใช้สถานะ pending ให้อัตโนมัติ
+    const { error: signUpError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: {
+        data: { full_name: form.name, company_name: form.companyName },
+      },
     });
+
+    setLoading(false);
+    if (signUpError) {
+      setError(signUpError.message === "User already registered"
+        ? "อีเมลนี้มีบัญชีอยู่แล้วในระบบ"
+        : "สมัครไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
     setSubmitted(true);
   };
 
@@ -4133,7 +4266,7 @@ function RegisterPage({ onRegister, onGoToLogin }) {
           <p className="text-lg font-semibold text-slate-900 mb-2">สมัครสำเร็จ</p>
           <p className="text-sm text-slate-600 mb-5">
             บัญชีของคุณกำลังรอการอนุมัติจากผู้ดูแลระบบ จะเข้าสู่ระบบได้หลังได้รับการอนุมัติแล้ว
-            (เริ่มต้นด้วยแพ็กเกจ Free)
+            (เริ่มต้นด้วยแพ็กเกจ Free) — ถ้าระบบยืนยันอีเมลไว้ อย่าลืมเช็กอีเมลเพื่อยืนยันตัวตนก่อนด้วย
           </p>
           <button onClick={onGoToLogin} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700">
             กลับไปหน้าเข้าสู่ระบบ
@@ -4151,6 +4284,7 @@ function RegisterPage({ onRegister, onGoToLogin }) {
           1 บัญชี ต่อ 1 บริษัท — ข้อมูลของแต่ละบริษัทแยกจากกันโดยสมบูรณ์ ต้องได้รับการอนุมัติจาก
           ผู้ดูแลระบบก่อนจึงจะเข้าใช้งานได้
         </p>
+        {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-3">{error}</div>}
         <div className="mb-3">
           <label className="text-xs text-slate-500 block mb-1">ชื่อ-สกุลผู้ดูแลระบบของบริษัท (จป.)</label>
           <input
@@ -4177,7 +4311,7 @@ function RegisterPage({ onRegister, onGoToLogin }) {
           />
         </div>
         <div className="mb-4">
-          <label className="text-xs text-slate-500 block mb-1">รหัสผ่าน</label>
+          <label className="text-xs text-slate-500 block mb-1">รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
           <input
             type="password"
             value={form.password}
@@ -4185,8 +4319,12 @@ function RegisterPage({ onRegister, onGoToLogin }) {
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
           />
         </div>
-        <button onClick={submit} className="w-full text-sm bg-slate-900 text-white px-3 py-2 rounded-lg mb-3">
-          สมัครใช้งาน
+        <button
+          onClick={submit}
+          disabled={loading}
+          className="w-full text-sm bg-slate-900 text-white px-3 py-2 rounded-lg mb-3 disabled:opacity-50"
+        >
+          {loading ? "กำลังสมัคร..." : "สมัครใช้งาน"}
         </button>
         <p className="text-xs text-slate-500 text-center">
           มีบัญชีแล้ว? <button onClick={onGoToLogin} className="underline text-slate-700">เข้าสู่ระบบ</button>
@@ -4660,8 +4798,9 @@ function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpe
 }
 
 export default function JorPorPrototype() {
-  const [users, setUsers] = useState(initialUsers);
+  const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [authView, setAuthView] = useState("login");
   const [tierPermissions, setTierPermissions] = useState(initialTierPermissions);
   const [tierLimits, setTierLimits] = useState(initialTierLimits);
@@ -4673,28 +4812,130 @@ export default function JorPorPrototype() {
   const [tenantStore, setTenantStore] = useState(initialTenantStore);
   const trainingCourses = initialTrainingCourses; // คลังหลักสูตรกลาง ใช้ร่วมกันทุกบริษัท
 
-  const handleLogin = (user) => {
-    setCurrentUser(user);
-    if (!user.isAdmin) {
-      setPage(tierPermissions[user.userType]?.[0] || "dashboard");
+  // ตรวจสอบ session เดิมตอนเปิดแอป (ทำให้รีเฟรชหน้าแล้วไม่ต้อง login ใหม่ทุกครั้ง)
+  // และคอยฟัง event ออกจากระบบจากที่อื่น (เช่น เปิดหลายแท็บ) — ต้องอยู่ก่อน early
+  // return ใดๆ เพราะ hook ต้องถูกเรียกจำนวนเท่ากันทุกครั้งที่ render
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const profile = await fetchUserProfile(session.user.id);
+        if (profile && profile.status === "approved") {
+          setCurrentUser(profile);
+        }
+      }
+      setSessionChecked(true);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") setCurrentUser(null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  // ดึงค่าสิทธิ์การเข้าถึงหน้า/ข้อจำกัดของแต่ละแพ็กเกจจาก subscription_plans
+  // จริงทุกครั้งที่มีคน login (ทั้งผู้ใช้ทั่วไปและแอดมิน) เพราะทั้งเมนูฝั่งผู้ใช้ทั่วไป
+  // และหน้าจัดการประเภทของแอดมินต้องใช้ค่าชุดเดียวกันนี้
+  useEffect(() => {
+    if (!currentUser) return;
+    fetchTierConfig();
+  }, [currentUser?.id]);
+
+  async function fetchTierConfig() {
+    const { data, error } = await supabase.from("subscription_plans").select("name, max_employees, features");
+    if (error || !data) {
+      console.error("fetchTierConfig error:", error);
+      return;
+    }
+    const perms = {};
+    const limits = {};
+    data.forEach((p) => {
+      const key = p.name.toLowerCase();
+      perms[key] = p.features?.pages === "all" ? ALL_PAGE_KEYS : (p.features?.pages || []);
+      limits[key] = { maxEmployees: p.max_employees };
+    });
+    setTierPermissions(perms);
+    setTierLimits(limits);
+  }
+
+  // ดึงรายชื่อผู้ใช้งานทั้งหมด (ทุกบริษัท) ใช้เฉพาะฝั่งแอดมินสำหรับหน้าจัดการ/อนุมัติ
+  // — RLS ฝั่งฐานข้อมูลอนุญาตให้ super_admin เท่านั้นที่ดึงได้ครบทุกคน
+  async function fetchAllUsers() {
+    const { data, error } = await supabase
+      .from("users")
+      .select(USER_SELECT_QUERY)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("fetchAllUsers error:", error);
+      return;
+    }
+    setUsers((data || []).map(mapUserRow));
+  }
+
+  useEffect(() => {
+    if (currentUser?.isAdmin) fetchAllUsers();
+  }, [currentUser?.isAdmin]);
+
+  const handleLogin = (profile) => {
+    setCurrentUser(profile);
+    if (!profile.isAdmin) {
+      setPage(tierPermissions[profile.userType]?.[0] || "dashboard");
     }
   };
-  const handleLogout = () => { setCurrentUser(null); setPage("dashboard"); };
-  const handleRegister = (newUser) => {
-    setUsers([...users, newUser]);
-    setTenantStore({ ...tenantStore, [newUser.id]: createEmptyTenantData() });
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+    setPage("dashboard");
   };
-  const approveUser = (id) => setUsers(users.map((u) => (u.id === id ? { ...u, status: "approved" } : u)));
-  const rejectUser = (id) => setUsers(users.map((u) => (u.id === id ? { ...u, status: "rejected" } : u)));
-  const updateUser = (id, fields) => setUsers(users.map((u) => (u.id === id ? { ...u, ...fields } : u)));
-  const updateTierPermissions = (tier, pages) => setTierPermissions({ ...tierPermissions, [tier]: pages });
-  const updateTierLimits = (tier, limits) => setTierLimits({ ...tierLimits, [tier]: { ...tierLimits[tier], ...limits } });
+  const approveUser = async (id) => {
+    await supabase.from("users").update({ approval_status: "approved" }).eq("id", id);
+    fetchAllUsers();
+  };
+  const rejectUser = async (id) => {
+    await supabase.from("users").update({ approval_status: "rejected" }).eq("id", id);
+    fetchAllUsers();
+  };
+  // ใช้แก้ "แพ็กเกจ" ของบริษัทนั้น (userType) เท่านั้น — ต้องไปอัปเดตที่ subscriptions.plan_id
+  // ไม่ใช่แก้ตรงตาราง users เพราะแพ็กเกจผูกกับ organization ไม่ใช่ผูกกับ user โดยตรง
+  const updateUser = async (id, fields) => {
+    if (!fields.userType) return;
+    const { data: userRow } = await supabase.from("users").select("organization_id").eq("id", id).single();
+    const { data: planRow } = await supabase
+      .from("subscription_plans")
+      .select("id")
+      .ilike("name", fields.userType)
+      .single();
+    if (!userRow?.organization_id || !planRow?.id) return;
+    await supabase.from("subscriptions").update({ plan_id: planRow.id }).eq("organization_id", userRow.organization_id);
+    fetchAllUsers();
+  };
+  const updateTierPermissions = async (tier, pages) => {
+    await supabase
+      .from("subscription_plans")
+      .update({ features: { pages } })
+      .ilike("name", tier);
+    fetchTierConfig();
+  };
+  const updateTierLimits = async (tier, limits) => {
+    await supabase
+      .from("subscription_plans")
+      .update({ max_employees: limits.maxEmployees })
+      .ilike("name", tier);
+    fetchTierConfig();
+  };
+
+  if (!sessionChecked) {
+    return (
+      <div className="min-h-[600px] flex items-center justify-center bg-slate-50">
+        <p className="text-sm text-slate-400">กำลังโหลด...</p>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return authView === "login" ? (
-      <LoginPage users={users} onLogin={handleLogin} onGoToRegister={() => setAuthView("register")} />
+      <LoginPage onLogin={handleLogin} onGoToRegister={() => setAuthView("register")} />
     ) : (
-      <RegisterPage onRegister={handleRegister} onGoToLogin={() => setAuthView("login")} />
+      <RegisterPage onGoToLogin={() => setAuthView("login")} />
     );
   }
 
@@ -4775,6 +5016,7 @@ export default function JorPorPrototype() {
   const trainingRequirements = tenant.trainingRequirements;
   const setTrainingRequirements = (val) => updateTenant({ trainingRequirements: val });
   const trainingRecords = tenant.trainingRecords;
+  const setTrainingRecords = (val) => updateTenant({ trainingRecords: val });
   const ltiBaselineDate = tenant.ltiBaselineDate;
   const setLtiBaselineDate = (val) => updateTenant({ ltiBaselineDate: val });
 
@@ -4812,6 +5054,18 @@ export default function JorPorPrototype() {
     setEnvironmentalMeasurements(environmentalMeasurements.filter((m) => m.id !== id));
   const addTrainingRequirement = (r) => setTrainingRequirements([...trainingRequirements, r]);
   const removeTrainingRequirement = (id) => setTrainingRequirements(trainingRequirements.filter((r) => r.id !== id));
+  // บันทึกผลอบรมของพนักงานคนหนึ่งต่อหลักสูตรหนึ่ง — ถ้ามีบันทึกเดิมอยู่แล้วจะแก้ไขทับ (upsert)
+  // ไม่ใช่เพิ่มซ้ำเรื่อยๆ ทำให้ "แก้ไขว่าผ่านอบรมแล้วหรือยัง" ทำได้จากจุดเดียวเสมอ
+  const upsertTrainingRecord = (employeeId, courseId, fields) => {
+    const existing = trainingRecords.find((r) => r.employeeId === employeeId && r.courseId === courseId);
+    if (existing) {
+      setTrainingRecords(trainingRecords.map((r) => (r.id === existing.id ? { ...r, ...fields } : r)));
+    } else {
+      setTrainingRecords([...trainingRecords, { id: Date.now(), employeeId, courseId, ...fields }]);
+    }
+  };
+  const deleteTrainingRecord = (employeeId, courseId) =>
+    setTrainingRecords(trainingRecords.filter((r) => !(r.employeeId === employeeId && r.courseId === courseId)));
   const updateLocation = (id, fields) => setLocations(locations.map((l) => (l.id === id ? { ...l, ...fields } : l)));
   const deleteLocation = (id) => setLocations(locations.filter((l) => l.id !== id));
   const addEquipment = (unit) => setEquipment([...equipment, unit]);
@@ -5004,6 +5258,8 @@ export default function JorPorPrototype() {
             records={trainingRecords}
             onAddRequirement={addTrainingRequirement}
             onRemoveRequirement={removeTrainingRequirement}
+            onUpsertRecord={upsertTrainingRecord}
+            onDeleteRecord={deleteTrainingRecord}
           />
         )}
         {page === "checklist" && <ChecklistPage />}
