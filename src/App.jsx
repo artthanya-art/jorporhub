@@ -4251,9 +4251,9 @@ function RegisterPage({ onGoToLogin }) {
 
     setLoading(false);
     if (signUpError) {
-      setError(signUpError.message === "User already registered"
-        ? "อีเมลนี้มีบัญชีอยู่แล้วในระบบ"
-        : "สมัครไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      // ชั่วคราวสำหรับ debug: โชว์ข้อความ error จริงจาก Supabase ตรงๆ แทนข้อความ
+      // ทั่วไป จะได้เห็นสาเหตุที่แท้จริง — เดี๋ยวเปลี่ยนกลับเป็นข้อความสวยงามทีหลัง
+      setError(`[DEBUG] ${signUpError.message} (status: ${signUpError.status ?? "-"})`);
       return;
     }
     setSubmitted(true);
