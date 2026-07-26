@@ -4251,9 +4251,15 @@ function RegisterPage({ onGoToLogin }) {
 
     setLoading(false);
     if (signUpError) {
-      // ชั่วคราวสำหรับ debug: โชว์ข้อความ error จริงจาก Supabase ตรงๆ แทนข้อความ
-      // ทั่วไป จะได้เห็นสาเหตุที่แท้จริง — เดี๋ยวเปลี่ยนกลับเป็นข้อความสวยงามทีหลัง
-      setError(`[DEBUG] ${signUpError.message} (status: ${signUpError.status ?? "-"})`);
+      if (signUpError.message === "User already registered") {
+        setError("อีเมลนี้มีบัญชีอยู่แล้วในระบบ");
+      } else if (signUpError.status === 429 || /rate limit/i.test(signUpError.message || "")) {
+        // Supabase มีโควตาส่งอีเมลยืนยันตัวตนแบบใช้ร่วมกัน (เฉพาะช่วงทดสอบ/ยังไม่ได้ต่อ
+        // SMTP ของตัวเอง) ถ้าสมัครถี่เกินไปจะติดโควตานี้ ไม่ใช่ปัญหาที่ตัวระบบ
+        setError("ขณะนี้มีผู้สมัครใช้งานถี่เกินไป กรุณาลองใหม่อีกครั้งในอีกสักครู่");
+      } else {
+        setError("สมัครไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      }
       return;
     }
     setSubmitted(true);
