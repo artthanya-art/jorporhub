@@ -104,6 +104,7 @@ function mapUserRow(row) {
     id: row.id,
     name: row.full_name,
     companyName: row.organization?.name ?? "-",
+    organizationId: row.organization?.id ?? null,
     email: row.email,
     userType: row.role === "super_admin" ? null : planName,
     status: row.approval_status,
@@ -119,6 +120,62 @@ const USER_SELECT_QUERY = `
     subscriptions ( status, plan:subscription_plans ( name ) )
   )
 `;
+
+// แปลงแถวจากตาราง employees จริง (employee_code, full_name, primary_location_id) ให้เป็น
+// รูปแบบที่หน้าจอทั้งหมดคาดหวัง (code, name, primaryLocationId) เพราะชื่อฟิลด์ในฐานข้อมูล
+// เขียนแบบ snake_case ตาม schema แต่โค้ดหน้าจอเขียนไว้ตั้งแต่แรกแบบ camelCase
+function mapEmployeeRow(row) {
+  return {
+    id: row.id,
+    code: row.employee_code || "-",
+    name: row.full_name,
+    position: row.position || "-",
+    department: row.department || "-",
+    primaryLocationId: row.primary_location_id,
+  };
+}
+
+// แปลงกลับจากรูปแบบหน้าจอ ให้เป็นชื่อคอลัมน์จริงตอนจะ insert/update เข้า Supabase
+function toEmployeeRow(emp, organizationId) {
+  return {
+    organization_id: organizationId,
+    employee_code: emp.code === "-" ? null : emp.code,
+    full_name: emp.name,
+    position: emp.position === "-" ? null : emp.position,
+    department: emp.department === "-" ? null : emp.department,
+    primary_location_id: emp.primaryLocationId || null,
+  };
+}
+
+// รวมข้อมูล 3 ตาราง (work_locations + work_location_hazards + location_risk_assessments
+// รอบล่าสุด) ให้เป็น object เดียวที่หน้าจอใช้งานอยู่แล้ว — assessorName ใช้ currentUser.name
+// ตรงๆ แทนการ join ไปตาราง users เพราะตอนนี้ 1 บริษัท = 1 ผู้ใช้เท่านั้น
+function mapLocationRow(loc, hazardRows, latestAssessment, assessorName) {
+  return {
+    id: loc.id,
+    name: loc.name,
+    building: loc.building || "-",
+    description: loc.description || "-",
+    riskLevel: loc.risk_level,
+    hazards: (hazardRows || []).map((h) => h.hazard_type),
+    riskAssessment: latestAssessment
+      ? {
+          riskLevel: latestAssessment.risk_level,
+          findings: latestAssessment.findings || "-",
+          controlMeasures: latestAssessment.control_measures || "-",
+          nextDue: latestAssessment.next_assessment_due || "",
+          updatedAt: latestAssessment.assessment_date,
+          updatedBy: assessorName || "-",
+        }
+      : {
+          riskLevel: loc.risk_level, findings: "-", controlMeasures: "-", nextDue: "",
+          updatedAt: loc.created_at, updatedBy: "-",
+        },
+    // ยังไม่รองรับรูปสถานที่ผ่าน Supabase Storage — ผูกเข้ากับ state ท้องถิ่นแยกต่างหาก
+    // ที่ระดับ App component แทน (ดู locationPhotos)
+    photoUrl: null,
+  };
+}
 
 async function fetchUserProfile(authUserId) {
   const { data, error } = await supabase
@@ -2732,7 +2789,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
       name: form.name,
       position: form.position || "-",
       department: form.department || "-",
-      primaryLocationId: form.primaryLocationId ? Number(form.primaryLocationId) : null,
+      primaryLocationId: form.primaryLocationId || null,
     });
     setForm({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
     setShowForm(false);
@@ -2756,7 +2813,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
       name: editForm.name,
       position: editForm.position || "-",
       department: editForm.department || "-",
-      primaryLocationId: editForm.primaryLocationId ? Number(editForm.primaryLocationId) : null,
+      primaryLocationId: editForm.primaryLocationId || null,
     });
     setEditingId(null);
   };
@@ -3946,7 +4003,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
             <label className="text-xs text-slate-500 block mb-1">สถานที่</label>
             <select
               value={locationId}
-              onChange={(e) => setLocationId(Number(e.target.value))}
+              onChange={(e) => setLocationId(e.target.value)}
               className="w-full sm:w-72 border border-slate-300 rounded-lg px-3 py-2 text-sm"
             >
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -3955,7 +4012,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
           <MeasurementSubForm
             onCancel={() => setShowForm(false)}
             onSubmit={(data) => {
-              onAdd({ id: Date.now(), locationId: Number(locationId), ...data });
+              onAdd({ id: Date.now(), locationId: locationId, ...data });
               setShowForm(false);
             }}
           />
@@ -3985,7 +4042,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
                   const records = [...grouped[type][locId]].sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
                   return (
                     <div key={locId}>
-                      <p className="text-base font-bold text-slate-800 mb-2">สถานที่: {locationName(Number(locId))}</p>
+                      <p className="text-base font-bold text-slate-800 mb-2">สถานที่: {locationName(locId)}</p>
                       <div className="space-y-3">
                         {records.map((m) => (
                           <MeasurementRecordCard
@@ -4923,7 +4980,88 @@ export default function JorPorPrototype() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [equipmentGroupOpen, setEquipmentGroupOpen] = useState(false);
   const [tenantStore, setTenantStore] = useState(initialTenantStore);
+  const [employees, setEmployeesData] = useState([]);
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [locationsData, setLocationsData] = useState([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  // รูปสถานที่ยังไม่รองรับ Supabase Storage (ดูโน้ตใน mapLocationRow) เก็บไว้ในหน่วยความจำ
+  // เบราว์เซอร์แยกต่างหากที่นี่ ไม่ผ่านการ fetch/refetch ของ Supabase เพื่อไม่ให้ถูกเขียนทับ
+  const [locationPhotos, setLocationPhotos] = useState({});
+  const locations = locationsData.map((l) => ({ ...l, photoUrl: locationPhotos[l.id] ?? null }));
   const trainingCourses = initialTrainingCourses; // คลังหลักสูตรกลาง ใช้ร่วมกันทุกบริษัท
+
+  // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
+  // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
+  async function fetchEmployees() {
+    setEmployeesLoading(true);
+    const { data, error } = await supabase
+      .from("employees")
+      .select("id, employee_code, full_name, position, department, primary_location_id")
+      .eq("is_active", true)
+      .order("full_name");
+    setEmployeesLoading(false);
+    if (error) {
+      console.error("fetchEmployees error:", error);
+      return;
+    }
+    setEmployeesData((data || []).map(mapEmployeeRow));
+  }
+
+  // ดึงสถานที่ทำงานจริงจาก Supabase พร้อม hazards และผลประเมินความเสี่ยงล่าสุดของแต่ละที่
+  // (รวม 3 ตารางเข้าด้วยกันในฝั่งโค้ด เพราะ Supabase JS client ไม่รองรับ "แถวล่าสุดต่อกลุ่ม"
+  // ในคำสั่งเดียวโดยตรง)
+  async function fetchLocations() {
+    setLocationsLoading(true);
+    const { data: locs, error } = await supabase
+      .from("work_locations")
+      .select("id, name, building, description, risk_level, created_at")
+      .eq("is_active", true)
+      .order("name");
+    if (error) {
+      console.error("fetchLocations error:", error);
+      setLocationsLoading(false);
+      return;
+    }
+    const locationIds = (locs || []).map((l) => l.id);
+    let hazardsByLocation = {};
+    let latestAssessmentByLocation = {};
+
+    if (locationIds.length > 0) {
+      const { data: hazardRows } = await supabase
+        .from("work_location_hazards")
+        .select("location_id, hazard_type")
+        .in("location_id", locationIds);
+      (hazardRows || []).forEach((h) => {
+        if (!hazardsByLocation[h.location_id]) hazardsByLocation[h.location_id] = [];
+        hazardsByLocation[h.location_id].push(h);
+      });
+
+      const { data: assessmentRows } = await supabase
+        .from("location_risk_assessments")
+        .select("location_id, risk_level, findings, control_measures, next_assessment_due, assessment_date")
+        .in("location_id", locationIds)
+        .order("assessment_date", { ascending: false });
+      // เรียงจากใหม่ไปเก่าแล้ว ดังนั้นแถวแรกที่เจอของแต่ละ location_id คือรอบล่าสุด
+      (assessmentRows || []).forEach((a) => {
+        if (!latestAssessmentByLocation[a.location_id]) latestAssessmentByLocation[a.location_id] = a;
+      });
+    }
+
+    setLocationsData(
+      (locs || []).map((l) =>
+        mapLocationRow(l, hazardsByLocation[l.id], latestAssessmentByLocation[l.id], currentUser?.name)
+      )
+    );
+    setLocationsLoading(false);
+  }
+
+  useEffect(() => {
+    if (currentUser && !currentUser.isAdmin) {
+      fetchEmployees();
+      fetchLocations();
+    }
+  }, [currentUser?.id]);
+
 
   // ตรวจสอบ session เดิมตอนเปิดแอป (ทำให้รีเฟรชหน้าแล้วไม่ต้อง login ใหม่ทุกครั้ง)
   // และคอยฟัง event ออกจากระบบจากที่อื่น (เช่น เปิดหลายแท็บ) — ต้องอยู่ก่อน early
@@ -5120,10 +5258,6 @@ export default function JorPorPrototype() {
   const setPpeCatalog = (val) => updateTenant({ ppeCatalog: val });
   const noncompliance = tenant.noncompliance;
   const setNoncompliance = (val) => updateTenant({ noncompliance: val });
-  const employees = tenant.employees;
-  const setEmployees = (val) => updateTenant({ employees: val });
-  const locations = tenant.locations;
-  const setLocations = (val) => updateTenant({ locations: val });
   const environmentalMeasurements = tenant.environmentalMeasurements;
   const setEnvironmentalMeasurements = (val) => updateTenant({ environmentalMeasurements: val });
   const trainingRequirements = tenant.trainingRequirements;
@@ -5156,11 +5290,82 @@ export default function JorPorPrototype() {
   const updatePpeCatalogItem = (id, fields) =>
     setPpeCatalog(ppeCatalog.map((c) => (c.id === id ? { ...c, ...fields } : c)));
   const deletePpeCatalogItem = (id) => setPpeCatalog(ppeCatalog.filter((c) => c.id !== id));
-  const addEmployee = (emp) => setEmployees([...employees, emp]);
-  const addManyEmployees = (newEmps) => setEmployees([...employees, ...newEmps]);
-  const deleteEmployee = (empId) => setEmployees(employees.filter((e) => e.id !== empId));
-  const updateEmployee = (empId, fields) => setEmployees(employees.map((e) => (e.id === empId ? { ...e, ...fields } : e)));
-  const addLocation = (loc) => setLocations([...locations, loc]);
+  const addEmployee = async (emp) => {
+    const { error } = await supabase.from("employees").insert(toEmployeeRow(emp, currentUser.organizationId));
+    if (error) {
+      console.error("addEmployee error:", error);
+      alert("บันทึกพนักงานไม่สำเร็จ: " + error.message);
+      return;
+    }
+    fetchEmployees();
+  };
+  const addManyEmployees = async (newEmps) => {
+    const rows = newEmps.map((e) => toEmployeeRow(e, currentUser.organizationId));
+    const { error } = await supabase.from("employees").insert(rows);
+    if (error) {
+      console.error("addManyEmployees error:", error);
+      alert("นำเข้าพนักงานไม่สำเร็จ: " + error.message);
+      return;
+    }
+    fetchEmployees();
+  };
+  const deleteEmployee = async (empId) => {
+    // soft-delete ตามที่ออกแบบไว้ใน schema (ดูโน้ตข้อ 23) — ไม่ลบแถวจริง เพราะพนักงานอาจมี
+    // ประวัติ PPE/อุบัติเหตุ/อบรมผูกอยู่ที่ต้องเก็บไว้ตรวจสอบย้อนหลังตามกฎหมายแรงงาน
+    const { error } = await supabase.from("employees").update({ is_active: false }).eq("id", empId);
+    if (error) {
+      console.error("deleteEmployee error:", error);
+      alert("ลบพนักงานไม่สำเร็จ: " + error.message);
+      return;
+    }
+    fetchEmployees();
+  };
+  const updateEmployee = async (empId, fields) => {
+    const current = employees.find((e) => e.id === empId);
+    const merged = { ...current, ...fields };
+    const { error } = await supabase.from("employees").update(toEmployeeRow(merged, currentUser.organizationId)).eq("id", empId);
+    if (error) {
+      console.error("updateEmployee error:", error);
+      alert("แก้ไขพนักงานไม่สำเร็จ: " + error.message);
+      return;
+    }
+    fetchEmployees();
+  };
+  const addLocation = async (loc) => {
+    const { data: newLoc, error } = await supabase
+      .from("work_locations")
+      .insert({
+        organization_id: currentUser.organizationId,
+        name: loc.name,
+        building: loc.building === "-" ? null : loc.building,
+        description: loc.description === "-" ? null : loc.description,
+        risk_level: loc.riskLevel,
+      })
+      .select()
+      .single();
+    if (error) {
+      console.error("addLocation error:", error);
+      alert("บันทึกสถานที่ไม่สำเร็จ: " + error.message);
+      return;
+    }
+    if (loc.hazards?.length) {
+      await supabase.from("work_location_hazards").insert(
+        loc.hazards.map((h) => ({ location_id: newLoc.id, hazard_type: h }))
+      );
+    }
+    if (loc.riskAssessment) {
+      await supabase.from("location_risk_assessments").insert({
+        organization_id: currentUser.organizationId,
+        location_id: newLoc.id,
+        assessed_by: currentUser.id,
+        risk_level: loc.riskAssessment.riskLevel,
+        findings: loc.riskAssessment.findings === "-" ? null : loc.riskAssessment.findings,
+        control_measures: loc.riskAssessment.controlMeasures === "-" ? null : loc.riskAssessment.controlMeasures,
+        next_assessment_due: loc.riskAssessment.nextDue || null,
+      });
+    }
+    fetchLocations();
+  };
   const addEnvironmentalMeasurement = (m) => setEnvironmentalMeasurements([...environmentalMeasurements, m]);
   const updateEnvironmentalMeasurement = (id, fields) =>
     setEnvironmentalMeasurements(environmentalMeasurements.map((m) => (m.id === id ? { ...m, ...fields } : m)));
@@ -5180,8 +5385,62 @@ export default function JorPorPrototype() {
   };
   const deleteTrainingRecord = (employeeId, courseId) =>
     setTrainingRecords(trainingRecords.filter((r) => !(r.employeeId === employeeId && r.courseId === courseId)));
-  const updateLocation = (id, fields) => setLocations(locations.map((l) => (l.id === id ? { ...l, ...fields } : l)));
-  const deleteLocation = (id) => setLocations(locations.filter((l) => l.id !== id));
+  const updateLocation = async (id, fields) => {
+    // เคสรูปภาพอย่างเดียว — เก็บไว้ในหน่วยความจำเท่านั้น ยังไม่รองรับ Supabase Storage
+    // (ดูโน้ตใน mapLocationRow) ไม่ต้องยิง Supabase หรือ refetch เลยเพื่อไม่ให้ค่าที่เพิ่งตั้ง
+    // ถูกเขียนทับกลับเป็น null ทันที
+    if (fields.photoUrl !== undefined && Object.keys(fields).length === 1) {
+      setLocationPhotos((prev) => ({ ...prev, [id]: fields.photoUrl }));
+      return;
+    }
+
+    const basicUpdate = {};
+    if (fields.name !== undefined) basicUpdate.name = fields.name;
+    if (fields.building !== undefined) basicUpdate.building = fields.building === "-" ? null : fields.building;
+    if (fields.description !== undefined) basicUpdate.description = fields.description === "-" ? null : fields.description;
+    if (fields.riskLevel !== undefined) basicUpdate.risk_level = fields.riskLevel;
+    if (Object.keys(basicUpdate).length > 0) {
+      await supabase.from("work_locations").update(basicUpdate).eq("id", id);
+    }
+
+    // แทนที่รายการความเสี่ยงทั้งหมดใหม่ทุกครั้งที่แก้ไข (ลบของเดิมแล้วใส่ใหม่ ง่ายกว่าไล่ diff
+    // ทีละรายการ และจำนวนความเสี่ยงต่อสถานที่มีไม่เยอะจนเป็นปัญหาประสิทธิภาพ)
+    if (fields.hazards !== undefined) {
+      await supabase.from("work_location_hazards").delete().eq("location_id", id);
+      if (fields.hazards.length > 0) {
+        await supabase.from("work_location_hazards").insert(
+          fields.hazards.map((h) => ({ location_id: id, hazard_type: h }))
+        );
+      }
+    }
+
+    // บันทึกผลประเมินความเสี่ยงเป็น "ประวัติรอบใหม่" เสมอ ไม่ทับของเดิม ตามที่ออกแบบไว้ใน
+    // schema (location_risk_assessments เป็นตารางประวัติ) พร้อมอัปเดต risk_level ล่าสุด
+    // ไว้ที่ work_locations ด้วย (denormalized ตามที่ออกแบบไว้)
+    if (fields.riskAssessment) {
+      await supabase.from("location_risk_assessments").insert({
+        organization_id: currentUser.organizationId,
+        location_id: id,
+        assessed_by: currentUser.id,
+        risk_level: fields.riskAssessment.riskLevel,
+        findings: fields.riskAssessment.findings === "-" ? null : fields.riskAssessment.findings,
+        control_measures: fields.riskAssessment.controlMeasures === "-" ? null : fields.riskAssessment.controlMeasures,
+        next_assessment_due: fields.riskAssessment.nextDue || null,
+      });
+      await supabase.from("work_locations").update({ risk_level: fields.riskAssessment.riskLevel }).eq("id", id);
+    }
+
+    fetchLocations();
+  };
+  const deleteLocation = async (id) => {
+    const { error } = await supabase.from("work_locations").update({ is_active: false }).eq("id", id);
+    if (error) {
+      console.error("deleteLocation error:", error);
+      alert("ลบสถานที่ไม่สำเร็จ: " + error.message);
+      return;
+    }
+    fetchLocations();
+  };
   const addEquipment = (unit) => setEquipment([...equipment, unit]);
   const deleteEquipmentUnit = (id) => setEquipment(equipment.filter((eq) => eq.id !== id));
 
