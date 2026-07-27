@@ -323,10 +323,13 @@ const initialTrainingRecords = [
 function getRequiredCourseIds(employee, locations, requirements) {
   const loc = locations.find((l) => l.id === employee.primaryLocationId);
   const locationHazards = loc ? loc.hazards : [];
-  const empPosition = (employee.position || "").trim();
+  // normalize ("NFC") ช่วยกันกรณีข้อความตำแหน่งงานที่พิมพ์/วางมาจากที่ต่างกัน (เช่น LINE, Word)
+  // มีอักขระที่มองไม่เห็นด้วยตาเปล่าปนอยู่ ทำให้ === ไม่ตรงกันทั้งที่ดูเหมือนข้อความเดียวกัน
+  const normalizePosition = (s) => (s || "").trim().normalize("NFC");
+  const empPosition = normalizePosition(employee.position);
   const ids = new Set();
   requirements.forEach((r) => {
-    const reqPosition = (r.position || "").trim();
+    const reqPosition = normalizePosition(r.position);
     if (r.position && r.hazardType) {
       if (reqPosition === empPosition && locationHazards.includes(r.hazardType)) ids.add(r.courseId);
     } else if (r.position) {
@@ -2705,14 +2708,17 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
   );
 }
 
-function EmployeesPage({ employees, ppe, noncompliance, incidents, trainingRecords, trainingCourses, employeeLimit, onAdd, onAddMany, onDelete }) {
+function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, trainingRecords, trainingCourses, employeeLimit, onAdd, onAddMany, onDelete, onUpdate }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
-  const [form, setForm] = useState({ code: "", name: "", position: "", department: "" });
+  const [form, setForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
   const [importMessage, setImportMessage] = useState(null);
   const fileInputRef = useRef(null);
 
   const atLimit = employeeLimit != null && employees.length >= employeeLimit;
+  const locationName = (id) => locations.find((l) => l.id === id)?.name ?? "ยังไม่ระบุ";
 
   const submit = () => {
     if (!form.name.trim()) return;
@@ -2720,9 +2726,39 @@ function EmployeesPage({ employees, ppe, noncompliance, incidents, trainingRecor
       setImportMessage({ type: "error", text: `แพ็กเกจปัจจุบันบันทึกพนักงานได้สูงสุด ${employeeLimit} คน กรุณาอัปเกรดแพ็กเกจเพื่อเพิ่มจำนวน` });
       return;
     }
-    onAdd({ id: Date.now(), code: form.code || "-", name: form.name, position: form.position || "-", department: form.department || "-" });
-    setForm({ code: "", name: "", position: "", department: "" });
+    onAdd({
+      id: Date.now(),
+      code: form.code || "-",
+      name: form.name,
+      position: form.position || "-",
+      department: form.department || "-",
+      primaryLocationId: form.primaryLocationId ? Number(form.primaryLocationId) : null,
+    });
+    setForm({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
     setShowForm(false);
+  };
+
+  const startEdit = (emp) => {
+    setEditingId(emp.id);
+    setEditForm({
+      code: emp.code || "",
+      name: emp.name,
+      position: emp.position || "",
+      department: emp.department || "",
+      primaryLocationId: emp.primaryLocationId != null ? String(emp.primaryLocationId) : "",
+    });
+  };
+
+  const saveEdit = () => {
+    if (!editForm.name.trim()) return;
+    onUpdate(editingId, {
+      code: editForm.code || "-",
+      name: editForm.name,
+      position: editForm.position || "-",
+      department: editForm.department || "-",
+      primaryLocationId: editForm.primaryLocationId ? Number(editForm.primaryLocationId) : null,
+    });
+    setEditingId(null);
   };
 
   const handleImportClick = () => {
@@ -2909,6 +2945,17 @@ function EmployeesPage({ employees, ppe, noncompliance, incidents, trainingRecor
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
               />
             </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">สถานที่ประจำ</label>
+              <select
+                value={form.primaryLocationId}
+                onChange={(e) => setForm({ ...form, primaryLocationId: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">ยังไม่ระบุ</option>
+                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
@@ -2930,31 +2977,91 @@ function EmployeesPage({ employees, ppe, noncompliance, incidents, trainingRecor
               <th className="px-4 py-2.5 font-medium">ชื่อ-สกุล</th>
               <th className="px-4 py-2.5 font-medium">ตำแหน่ง</th>
               <th className="px-4 py-2.5 font-medium">แผนก</th>
+              <th className="px-4 py-2.5 font-medium">สถานที่ประจำ</th>
               <th className="px-4 py-2.5 font-medium">PPE ที่ถือครอง</th>
               <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
-            {employees.map((emp) => (
-              <tr
-                key={emp.id}
-                onClick={() => setSelectedId(emp.id)}
-                className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
-              >
-                <td className="px-4 py-2.5 text-slate-500">{emp.code || "-"}</td>
-                <td className="px-4 py-2.5">{emp.name}</td>
-                <td className="px-4 py-2.5 text-slate-500">{emp.position}</td>
-                <td className="px-4 py-2.5 text-slate-500">{emp.department}</td>
-                <td className="px-4 py-2.5 text-slate-500">{ppe.filter((p) => p.employeeId === emp.id).length} รายการ</td>
-                <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
-                <td className="px-4 py-2.5 text-right">
-                  <span onClick={(e) => e.stopPropagation()}>
-                    <ConfirmDeleteButton onConfirm={() => onDelete(emp.id)} />
-                  </span>
-                </td>
-              </tr>
-            ))}
+            {employees.map((emp) => {
+              const isEditing = editingId === emp.id;
+              if (isEditing) {
+                return (
+                  <tr key={emp.id} className="border-t border-slate-100 bg-slate-50">
+                    <td className="px-4 py-2">
+                      <input
+                        value={editForm.code}
+                        onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <input
+                        value={editForm.name}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <input
+                        value={editForm.position}
+                        onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <input
+                        value={editForm.department}
+                        onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <select
+                        value={editForm.primaryLocationId}
+                        onChange={(e) => setEditForm({ ...editForm, primaryLocationId: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                      >
+                        <option value="">ยังไม่ระบุ</option>
+                        {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2 text-slate-400">-</td>
+                    <td className="px-4 py-2" colSpan={2}>
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 underline">ยกเลิก</button>
+                        <button onClick={saveEdit} className="text-xs bg-slate-900 text-white px-2 py-1 rounded-lg">บันทึก</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
+              return (
+                <tr
+                  key={emp.id}
+                  onClick={() => setSelectedId(emp.id)}
+                  className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
+                >
+                  <td className="px-4 py-2.5 text-slate-500">{emp.code || "-"}</td>
+                  <td className="px-4 py-2.5">{emp.name}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{emp.position}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{emp.department}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{locationName(emp.primaryLocationId)}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{ppe.filter((p) => p.employeeId === emp.id).length} รายการ</td>
+                  <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => startEdit(emp)} className="text-xs text-slate-500 underline hover:text-slate-800">
+                      แก้ไข
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <ConfirmDeleteButton onConfirm={() => onDelete(emp.id)} />
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         </div>
@@ -5052,6 +5159,7 @@ export default function JorPorPrototype() {
   const addEmployee = (emp) => setEmployees([...employees, emp]);
   const addManyEmployees = (newEmps) => setEmployees([...employees, ...newEmps]);
   const deleteEmployee = (empId) => setEmployees(employees.filter((e) => e.id !== empId));
+  const updateEmployee = (empId, fields) => setEmployees(employees.map((e) => (e.id === empId ? { ...e, ...fields } : e)));
   const addLocation = (loc) => setLocations([...locations, loc]);
   const addEnvironmentalMeasurement = (m) => setEnvironmentalMeasurements([...environmentalMeasurements, m]);
   const updateEnvironmentalMeasurement = (id, fields) =>
@@ -5235,6 +5343,7 @@ export default function JorPorPrototype() {
         {page === "employees" && (
           <EmployeesPage
             employees={employees}
+            locations={locations}
             ppe={ppe}
             noncompliance={noncompliance}
             incidents={incidents}
@@ -5244,6 +5353,7 @@ export default function JorPorPrototype() {
             onAdd={addEmployee}
             onAddMany={addManyEmployees}
             onDelete={deleteEmployee}
+            onUpdate={updateEmployee}
           />
         )}
         {page === "environmental" && (
