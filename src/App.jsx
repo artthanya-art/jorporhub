@@ -39,6 +39,51 @@ function daysBetween(iso) {
 
 const incidentStatusOptions = ["รายงานแล้ว", "กำลังตรวจสอบ", "อยู่ระหว่างแก้ไข", "ปิดเคส"];
 
+// ---------------------------------------------------------------
+// Incidents <-> Supabase mapping
+// severity/status ในหน้าจอเป็นข้อความไทย แต่ในฐานข้อมูลเป็น enum ภาษาอังกฤษ
+// (incident_severity / incident_status) จึงต้องแปลงไป-กลับทุกครั้งที่ read/write
+// ---------------------------------------------------------------
+const severityDbToUi = {
+  near_miss: "เกือบเกิดเหตุ", minor: "เล็กน้อย", moderate: "ปานกลาง", severe: "รุนแรง", fatal: "รุนแรง",
+};
+const severityUiToDb = {
+  "เกือบเกิดเหตุ": "near_miss", "เล็กน้อย": "minor", "ปานกลาง": "moderate", "รุนแรง": "severe",
+};
+const incidentStatusDbToUi = {
+  reported: "รายงานแล้ว", investigating: "กำลังตรวจสอบ", corrective_action: "อยู่ระหว่างแก้ไข", closed: "ปิดเคส",
+};
+const incidentStatusUiToDb = {
+  "รายงานแล้ว": "reported", "กำลังตรวจสอบ": "investigating", "อยู่ระหว่างแก้ไข": "corrective_action", "ปิดเคส": "closed",
+};
+
+// รวม incident + พนักงานบาดเจ็บ (incident_injured_employees) + ความคืบหน้า (incident_updates)
+// ที่ดึงแยกกัน 3 ตาราง ให้เป็น object เดียวที่หน้าจอ IncidentsPage/IncidentDetail คาดหวัง
+function mapIncidentRow(row, injuredRows, updateRows, updatedByNameById) {
+  return {
+    id: row.id,
+    location: row.location || "-",
+    type: row.injury_type || "-",
+    severity: severityDbToUi[row.severity] || row.severity,
+    incidentDate: row.incident_date ? row.incident_date.slice(0, 10) : "",
+    status: incidentStatusDbToUi[row.status] || row.status,
+    description: row.description || "-",
+    injuredEmployees: (injuredRows || []).map((e) => ({
+      rowId: e.id,
+      employeeId: e.employee_id,
+      lostWorkdays: e.lost_workdays,
+      injuryType: e.injury_description || "-",
+    })),
+    updates: (updateRows || []).map((u) => ({
+      rowId: u.id,
+      date: u.created_at ? u.created_at.slice(0, 10) : "",
+      by: updatedByNameById?.[u.updated_by] || "-",
+      note: u.note,
+      newStatus: u.new_status ? incidentStatusDbToUi[u.new_status] : null,
+    })),
+  };
+}
+
 // อุบัติเหตุหนึ่งครั้งอาจมีพนักงานบาดเจ็บได้หลายคน แต่ละคนมีจำนวนวันหยุดงานของตัวเอง
 function incidentHasLTI(incident) {
   return incident.injuredEmployees.some((e) => e.lostWorkdays > 0);
@@ -871,7 +916,7 @@ function Dashboard({
 // Incidents
 // ---------------------------------------------------------------
 
-function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onDeleteIncident, locations, employees }) {
+function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [locationMode, setLocationMode] = useState("select"); // "select" | "custom"
@@ -910,6 +955,9 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onDeleteInci
         onBack={() => setSelectedId(null)}
         onUpdate={onUpdate}
         onAddProgress={onAddProgress}
+        onAddInjured={onAddInjured}
+        onUpdateInjured={onUpdateInjured}
+        onRemoveInjured={onRemoveInjured}
       />
     );
   }
@@ -1088,7 +1136,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onDeleteInci
 // Incident detail — แก้ไขสถานะ/รายละเอียด และบันทึกความคืบหน้า
 // ---------------------------------------------------------------
 
-function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress }) {
+function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, onAddInjured, onUpdateInjured, onRemoveInjured }) {
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState({
     location: incident.location,
@@ -1115,8 +1163,6 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress }
   const submitProgress = () => {
     if (!progressNote.trim()) return;
     onAddProgress(incident.id, {
-      date: todayIso(),
-      by: "ผู้ใช้งานปัจจุบัน",
       note: progressNote,
       newStatus: progressStatus || null,
     });
@@ -1126,28 +1172,20 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress }
 
   const addInjuredEmployee = () => {
     if (!newInjured.employeeId) return;
-    onUpdate(incident.id, {
-      injuredEmployees: [
-        ...incident.injuredEmployees,
-        {
-          employeeId: Number(newInjured.employeeId),
-          lostWorkdays: Number(newInjured.lostWorkdays) || 0,
-          injuryType: newInjured.injuryType || "-",
-        },
-      ],
+    onAddInjured(incident.id, {
+      employeeId: newInjured.employeeId,
+      lostWorkdays: Number(newInjured.lostWorkdays) || 0,
+      injuryType: newInjured.injuryType || "-",
     });
     setNewInjured({ employeeId: "", lostWorkdays: "0", injuryType: "" });
   };
 
-  const updateInjuredField = (idx, field, value) => {
-    const updated = incident.injuredEmployees.map((e, i) =>
-      i === idx ? { ...e, [field]: field === "lostWorkdays" ? Number(value) || 0 : value } : e
-    );
-    onUpdate(incident.id, { injuredEmployees: updated });
+  const updateInjuredField = (rowId, field, value) => {
+    onUpdateInjured(incident.id, rowId, field, field === "lostWorkdays" ? Number(value) || 0 : value);
   };
 
-  const removeInjuredEmployee = (idx) => {
-    onUpdate(incident.id, { injuredEmployees: incident.injuredEmployees.filter((_, i) => i !== idx) });
+  const removeInjuredEmployee = (rowId) => {
+    onRemoveInjured(incident.id, rowId);
   };
 
   return (
@@ -1180,13 +1218,13 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress }
               </tr>
             </thead>
             <tbody>
-              {incident.injuredEmployees.map((e, idx) => (
-                <tr key={idx} className="border-t border-slate-100">
+              {incident.injuredEmployees.map((e) => (
+                <tr key={e.rowId} className="border-t border-slate-100">
                   <td className="px-4 py-2.5">{nameOf(e.employeeId)}</td>
                   <td className="px-4 py-2.5">
                     <input
                       value={e.injuryType || ""}
-                      onChange={(ev) => updateInjuredField(idx, "injuryType", ev.target.value)}
+                      onChange={(ev) => updateInjuredField(e.rowId, "injuryType", ev.target.value)}
                       placeholder="เช่น มือบาดจากใบมีด"
                       className="w-full min-w-[10rem] border border-slate-300 rounded-lg px-2 py-1 text-sm"
                     />
@@ -1196,14 +1234,14 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress }
                       type="number"
                       min="0"
                       value={e.lostWorkdays}
-                      onChange={(ev) => updateInjuredField(idx, "lostWorkdays", ev.target.value)}
+                      onChange={(ev) => updateInjuredField(e.rowId, "lostWorkdays", ev.target.value)}
                       className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm"
                     />
                     <span className="text-slate-500 ml-1.5">วัน</span>
                     {e.lostWorkdays > 0 && <span className="text-xs text-red-600 ml-2">(LTI)</span>}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <button onClick={() => removeInjuredEmployee(idx)} className="text-xs text-slate-400 underline hover:text-red-600">
+                    <button onClick={() => removeInjuredEmployee(e.rowId)} className="text-xs text-slate-400 underline hover:text-red-600">
                       ลบ
                     </button>
                   </td>
@@ -5020,6 +5058,8 @@ export default function JorPorPrototype() {
   const [trainingCourses, setTrainingCourses] = useState([]);
   const [trainingRequirements, setTrainingRequirementsData] = useState([]);
   const [trainingRecords, setTrainingRecordsData] = useState([]);
+  const [incidents, setIncidentsData] = useState([]);
+  const [incidentsLoading, setIncidentsLoading] = useState(false);
 
   // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
   // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
@@ -5122,6 +5162,202 @@ export default function JorPorPrototype() {
     setTrainingRecordsData((data || []).map(mapTrainingRecordRow));
   }
 
+  // ดึงอุบัติเหตุจริงจาก Supabase พร้อมพนักงานที่บาดเจ็บ (incident_injured_employees) และ
+  // ความคืบหน้า (incident_updates) ของแต่ละเคส — รวม 3 ตารางฝั่งโค้ดเหมือนแนวทางเดียวกับ
+  // fetchLocations เพราะ Supabase JS client ดึงเป็นโครงสร้างซ้อนหลายชั้นในคำสั่งเดียวไม่ได้ง่ายๆ
+  async function fetchIncidents() {
+    setIncidentsLoading(true);
+    const { data: incidentRows, error } = await supabase
+      .from("incidents")
+      .select("id, location, injury_type, severity, incident_date, status, description")
+      .order("incident_date", { ascending: false });
+    if (error) {
+      console.error("fetchIncidents error:", error);
+      setIncidentsLoading(false);
+      return;
+    }
+    const incidentIds = (incidentRows || []).map((r) => r.id);
+    let injuredByIncident = {};
+    let updatesByIncident = {};
+    let userNameById = {};
+
+    if (incidentIds.length > 0) {
+      const { data: injuredRows } = await supabase
+        .from("incident_injured_employees")
+        .select("id, incident_id, employee_id, lost_workdays, injury_description")
+        .in("incident_id", incidentIds);
+      (injuredRows || []).forEach((e) => {
+        if (!injuredByIncident[e.incident_id]) injuredByIncident[e.incident_id] = [];
+        injuredByIncident[e.incident_id].push(e);
+      });
+
+      const { data: updateRows } = await supabase
+        .from("incident_updates")
+        .select("id, incident_id, updated_by, note, new_status, created_at")
+        .in("incident_id", incidentIds)
+        .order("created_at", { ascending: true });
+      (updateRows || []).forEach((u) => {
+        if (!updatesByIncident[u.incident_id]) updatesByIncident[u.incident_id] = [];
+        updatesByIncident[u.incident_id].push(u);
+      });
+
+      const updaterIds = [...new Set((updateRows || []).map((u) => u.updated_by).filter(Boolean))];
+      if (updaterIds.length > 0) {
+        const { data: userRows } = await supabase.from("users").select("id, full_name").in("id", updaterIds);
+        (userRows || []).forEach((u) => { userNameById[u.id] = u.full_name; });
+      }
+    }
+
+    setIncidentsData(
+      (incidentRows || []).map((r) =>
+        mapIncidentRow(r, injuredByIncident[r.id], updatesByIncident[r.id], userNameById)
+      )
+    );
+    setIncidentsLoading(false);
+  }
+
+  const addIncident = async (inc) => {
+    const { data, error } = await supabase
+      .from("incidents")
+      .insert({
+        organization_id: currentUser.organizationId,
+        reported_by: currentUser.id,
+        location: inc.location,
+        injury_type: inc.type,
+        severity: severityUiToDb[inc.severity] || "minor",
+        incident_date: inc.incidentDate,
+        status: "reported",
+        description: inc.description,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกอุบัติเหตุไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setIncidentsData([mapIncidentRow(data, [], []), ...incidents]);
+  };
+
+  const updateIncident = async (incidentId, fields) => {
+    const payload = {};
+    if (fields.location !== undefined) payload.location = fields.location;
+    if (fields.severity !== undefined) payload.severity = severityUiToDb[fields.severity] || fields.severity;
+    if (fields.description !== undefined) payload.description = fields.description;
+    if (fields.status !== undefined) payload.status = incidentStatusUiToDb[fields.status] || fields.status;
+    const { error } = await supabase.from("incidents").update(payload).eq("id", incidentId);
+    if (error) {
+      alert("บันทึกการแก้ไขไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setIncidentsData(incidents.map((inc) => (inc.id === incidentId ? { ...inc, ...fields } : inc)));
+  };
+
+  const deleteIncident = async (incidentId) => {
+    const { error } = await supabase.from("incidents").delete().eq("id", incidentId);
+    if (error) {
+      alert("ลบอุบัติเหตุไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setIncidentsData(incidents.filter((inc) => inc.id !== incidentId));
+  };
+
+  // บันทึกความคืบหน้า 1 รายการ (incident_updates) และถ้ามีการเปลี่ยนสถานะพ่วงมาด้วย
+  // ให้อัปเดต incidents.status ให้ตรงกันทันที (เหมือนพฤติกรรมเดิมของ mock data)
+  const addIncidentProgress = async (incidentId, entry) => {
+    const newStatusDb = entry.newStatus ? incidentStatusUiToDb[entry.newStatus] : null;
+    const { data, error } = await supabase
+      .from("incident_updates")
+      .insert({
+        organization_id: currentUser.organizationId,
+        incident_id: incidentId,
+        updated_by: currentUser.id,
+        note: entry.note,
+        new_status: newStatusDb,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกความคืบหน้าไม่สำเร็จ: " + error.message);
+      return;
+    }
+    if (newStatusDb) {
+      await supabase.from("incidents").update({ status: newStatusDb }).eq("id", incidentId);
+    }
+    setIncidentsData(
+      incidents.map((inc) =>
+        inc.id === incidentId
+          ? {
+              ...inc,
+              status: entry.newStatus || inc.status,
+              updates: [...inc.updates, { rowId: data.id, date: data.created_at.slice(0, 10), by: currentUser.name, note: data.note, newStatus: entry.newStatus || null }],
+            }
+          : inc
+      )
+    );
+  };
+
+  // เพิ่ม/แก้ไข/ลบพนักงานที่ได้รับบาดเจ็บของอุบัติเหตุหนึ่งเคส (incident_injured_employees)
+  const addInjuredEmployee = async (incidentId, entry) => {
+    const { data, error } = await supabase
+      .from("incident_injured_employees")
+      .insert({
+        incident_id: incidentId,
+        employee_id: entry.employeeId,
+        lost_workdays: entry.lostWorkdays,
+        injury_description: entry.injuryType,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("เพิ่มพนักงานบาดเจ็บไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setIncidentsData(
+      incidents.map((inc) =>
+        inc.id === incidentId
+          ? {
+              ...inc,
+              injuredEmployees: [
+                ...inc.injuredEmployees,
+                { rowId: data.id, employeeId: data.employee_id, lostWorkdays: data.lost_workdays, injuryType: data.injury_description || "-" },
+              ],
+            }
+          : inc
+      )
+    );
+  };
+
+  const updateInjuredEmployee = async (incidentId, rowId, field, value) => {
+    const payload = field === "lostWorkdays" ? { lost_workdays: value } : { injury_description: value };
+    const { error } = await supabase.from("incident_injured_employees").update(payload).eq("id", rowId);
+    if (error) {
+      alert("บันทึกไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setIncidentsData(
+      incidents.map((inc) =>
+        inc.id === incidentId
+          ? { ...inc, injuredEmployees: inc.injuredEmployees.map((e) => (e.rowId === rowId ? { ...e, [field]: value } : e)) }
+          : inc
+      )
+    );
+  };
+
+  const removeInjuredEmployee = async (incidentId, rowId) => {
+    const { error } = await supabase.from("incident_injured_employees").delete().eq("id", rowId);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setIncidentsData(
+      incidents.map((inc) =>
+        inc.id === incidentId
+          ? { ...inc, injuredEmployees: inc.injuredEmployees.filter((e) => e.rowId !== rowId) }
+          : inc
+      )
+    );
+  };
+
   useEffect(() => {
     if (currentUser && !currentUser.isAdmin) {
       fetchEmployees();
@@ -5129,6 +5365,7 @@ export default function JorPorPrototype() {
       fetchTrainingCourses();
       fetchTrainingRequirements();
       fetchTrainingRecords();
+      fetchIncidents();
     }
   }, [currentUser?.id]);
 
@@ -5318,8 +5555,6 @@ export default function JorPorPrototype() {
   const tenant = tenantStore[currentUser.id] || createEmptyTenantData();
   const updateTenant = (patch) => setTenantStore({ ...tenantStore, [currentUser.id]: { ...tenant, ...patch } });
 
-  const incidents = tenant.incidents;
-  const setIncidents = (val) => updateTenant({ incidents: val });
   const equipment = tenant.equipment;
   const setEquipment = (val) => updateTenant({ equipment: val });
   const ppe = tenant.ppe;
@@ -5336,18 +5571,6 @@ export default function JorPorPrototype() {
   // ข้อจำกัดจำนวนพนักงานตามประเภทผู้ใช้งาน (เช่น Free บันทึกได้ไม่เกิน 5 คน)
   const employeeLimit = tierLimits[currentUser.userType]?.maxEmployees ?? null;
 
-  const addIncident = (inc) => setIncidents([inc, ...incidents]);
-  const updateIncident = (incidentId, fields) =>
-    setIncidents(incidents.map((inc) => (inc.id === incidentId ? { ...inc, ...fields } : inc)));
-  const deleteIncident = (incidentId) => setIncidents(incidents.filter((inc) => inc.id !== incidentId));
-  const addIncidentProgress = (incidentId, entry) =>
-    setIncidents(
-      incidents.map((inc) =>
-        inc.id === incidentId
-          ? { ...inc, updates: [...inc.updates, entry], status: entry.newStatus || inc.status }
-          : inc
-      )
-    );
   const addNoncompliance = (record) => setNoncompliance([record, ...noncompliance]);
   const deleteNoncompliance = (id) => setNoncompliance(noncompliance.filter((r) => r.id !== id));
   const addPpeIssuance = (record) => setPpe([...ppe, record]);
@@ -5666,6 +5889,9 @@ export default function JorPorPrototype() {
             onUpdate={updateIncident}
             onAddProgress={addIncidentProgress}
             onDeleteIncident={deleteIncident}
+            onAddInjured={addInjuredEmployee}
+            onUpdateInjured={updateInjuredEmployee}
+            onRemoveInjured={removeInjuredEmployee}
             locations={locations}
             employees={employees}
           />
