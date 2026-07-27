@@ -177,6 +177,28 @@ function mapLocationRow(loc, hazardRows, latestAssessment, assessorName) {
   };
 }
 
+// หลักสูตร (training_courses) — validity_period_days → validityDays
+function mapCourseRow(row) {
+  return { id: row.id, name: row.name, validityDays: row.validity_period_days };
+}
+
+// requirement ของ Training Matrix (position/hazard_type → course) — course_id เก็บเป็น
+// UUID ตรงๆ ไม่ต้องแปลงชื่อฟิลด์อะไรมาก
+function mapRequirementRow(row) {
+  return { id: row.id, position: row.position, hazardType: row.hazard_type, courseId: row.course_id };
+}
+
+// ผลอบรมของพนักงานรายคน (training_records) — completion_date/expiry_date → camelCase
+function mapTrainingRecordRow(row) {
+  return {
+    id: row.id,
+    employeeId: row.employee_id,
+    courseId: row.course_id,
+    completionDate: row.completion_date,
+    expiryDate: row.expiry_date,
+  };
+}
+
 async function fetchUserProfile(authUserId) {
   const { data, error } = await supabase
     .from("users")
@@ -618,7 +640,7 @@ function ConfirmDeleteButton({ onConfirm, label = "ลบ", className = "" }) {
 
 function Dashboard({
   incidents, ppe, equipment, locations, noncompliance, environmentalMeasurements,
-  employees, trainingRequirements, trainingRecords, ltiBaselineDate, onSetLtiBaselineDate, currentUser,
+  employees, trainingRequirements, trainingRecords, trainingCourses, ltiBaselineDate, onSetLtiBaselineDate, currentUser,
 }) {
   const equipmentAttention = equipment.filter((e) => e.status !== "ปกติ").length;
   const ppeSoon = ppe.filter((p) => daysUntil(p.expiry) <= 30).length;
@@ -794,7 +816,7 @@ function Dashboard({
                     <tr key={i} className="border-t border-slate-100">
                       <td className="px-4 py-2.5">{g.employee.name}</td>
                       <td className="px-4 py-2.5 text-slate-500">
-                        {initialTrainingCourses.find((c) => c.id === g.courseId)?.name ?? "-"}
+                        {trainingCourses.find((c) => c.id === g.courseId)?.name ?? "-"}
                       </td>
                       <td className="px-4 py-2.5"><Badge tone={trainingStatusTone(g.status)}>{trainingStatusLabel[g.status]}</Badge></td>
                     </tr>
@@ -4988,7 +5010,9 @@ export default function JorPorPrototype() {
   // เบราว์เซอร์แยกต่างหากที่นี่ ไม่ผ่านการ fetch/refetch ของ Supabase เพื่อไม่ให้ถูกเขียนทับ
   const [locationPhotos, setLocationPhotos] = useState({});
   const locations = locationsData.map((l) => ({ ...l, photoUrl: locationPhotos[l.id] ?? null }));
-  const trainingCourses = initialTrainingCourses; // คลังหลักสูตรกลาง ใช้ร่วมกันทุกบริษัท
+  const [trainingCourses, setTrainingCourses] = useState([]);
+  const [trainingRequirements, setTrainingRequirementsData] = useState([]);
+  const [trainingRecords, setTrainingRecordsData] = useState([]);
 
   // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
   // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
@@ -5055,10 +5079,49 @@ export default function JorPorPrototype() {
     setLocationsLoading(false);
   }
 
+  // คลังหลักสูตร: ดึงทั้งหลักสูตรกลาง (organization_id เป็น NULL) และหลักสูตรที่บริษัทตัวเอง
+  // สร้างเพิ่มเอง (ถ้ามี) — RLS อนุญาตให้เห็นทั้งสองแบบอยู่แล้ว ไม่ต้องกรองซ้ำ
+  async function fetchTrainingCourses() {
+    const { data, error } = await supabase
+      .from("training_courses")
+      .select("id, name, validity_period_days")
+      .order("name");
+    if (error) {
+      console.error("fetchTrainingCourses error:", error);
+      return;
+    }
+    setTrainingCourses((data || []).map(mapCourseRow));
+  }
+
+  async function fetchTrainingRequirements() {
+    const { data, error } = await supabase
+      .from("training_requirements")
+      .select("id, position, hazard_type, course_id");
+    if (error) {
+      console.error("fetchTrainingRequirements error:", error);
+      return;
+    }
+    setTrainingRequirementsData((data || []).map(mapRequirementRow));
+  }
+
+  async function fetchTrainingRecords() {
+    const { data, error } = await supabase
+      .from("training_records")
+      .select("id, employee_id, course_id, completion_date, expiry_date");
+    if (error) {
+      console.error("fetchTrainingRecords error:", error);
+      return;
+    }
+    setTrainingRecordsData((data || []).map(mapTrainingRecordRow));
+  }
+
   useEffect(() => {
     if (currentUser && !currentUser.isAdmin) {
       fetchEmployees();
       fetchLocations();
+      fetchTrainingCourses();
+      fetchTrainingRequirements();
+      fetchTrainingRecords();
     }
   }, [currentUser?.id]);
 
@@ -5260,10 +5323,6 @@ export default function JorPorPrototype() {
   const setNoncompliance = (val) => updateTenant({ noncompliance: val });
   const environmentalMeasurements = tenant.environmentalMeasurements;
   const setEnvironmentalMeasurements = (val) => updateTenant({ environmentalMeasurements: val });
-  const trainingRequirements = tenant.trainingRequirements;
-  const setTrainingRequirements = (val) => updateTenant({ trainingRequirements: val });
-  const trainingRecords = tenant.trainingRecords;
-  const setTrainingRecords = (val) => updateTenant({ trainingRecords: val });
   const ltiBaselineDate = tenant.ltiBaselineDate;
   const setLtiBaselineDate = (val) => updateTenant({ ltiBaselineDate: val });
 
@@ -5371,20 +5430,61 @@ export default function JorPorPrototype() {
     setEnvironmentalMeasurements(environmentalMeasurements.map((m) => (m.id === id ? { ...m, ...fields } : m)));
   const deleteEnvironmentalMeasurement = (id) =>
     setEnvironmentalMeasurements(environmentalMeasurements.filter((m) => m.id !== id));
-  const addTrainingRequirement = (r) => setTrainingRequirements([...trainingRequirements, r]);
-  const removeTrainingRequirement = (id) => setTrainingRequirements(trainingRequirements.filter((r) => r.id !== id));
+  const addTrainingRequirement = async (r) => {
+    const { error } = await supabase.from("training_requirements").insert({
+      organization_id: currentUser.organizationId,
+      position: r.position || null,
+      hazard_type: r.hazardType || null,
+      course_id: r.courseId,
+    });
+    if (error) {
+      console.error("addTrainingRequirement error:", error);
+      alert("บันทึกไม่สำเร็จ: " + error.message);
+      return;
+    }
+    fetchTrainingRequirements();
+  };
+  const removeTrainingRequirement = async (id) => {
+    const { error } = await supabase.from("training_requirements").delete().eq("id", id);
+    if (error) {
+      console.error("removeTrainingRequirement error:", error);
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    fetchTrainingRequirements();
+  };
   // บันทึกผลอบรมของพนักงานคนหนึ่งต่อหลักสูตรหนึ่ง — ถ้ามีบันทึกเดิมอยู่แล้วจะแก้ไขทับ (upsert)
   // ไม่ใช่เพิ่มซ้ำเรื่อยๆ ทำให้ "แก้ไขว่าผ่านอบรมแล้วหรือยัง" ทำได้จากจุดเดียวเสมอ
-  const upsertTrainingRecord = (employeeId, courseId, fields) => {
+  const upsertTrainingRecord = async (employeeId, courseId, fields) => {
     const existing = trainingRecords.find((r) => r.employeeId === employeeId && r.courseId === courseId);
-    if (existing) {
-      setTrainingRecords(trainingRecords.map((r) => (r.id === existing.id ? { ...r, ...fields } : r)));
-    } else {
-      setTrainingRecords([...trainingRecords, { id: Date.now(), employeeId, courseId, ...fields }]);
+    const payload = {
+      organization_id: currentUser.organizationId,
+      employee_id: employeeId,
+      course_id: courseId,
+      completion_date: fields.completionDate,
+      expiry_date: fields.expiryDate || null,
+    };
+    const { error } = existing
+      ? await supabase.from("training_records").update(payload).eq("id", existing.id)
+      : await supabase.from("training_records").insert(payload);
+    if (error) {
+      console.error("upsertTrainingRecord error:", error);
+      alert("บันทึกผลอบรมไม่สำเร็จ: " + error.message);
+      return;
     }
+    fetchTrainingRecords();
   };
-  const deleteTrainingRecord = (employeeId, courseId) =>
-    setTrainingRecords(trainingRecords.filter((r) => !(r.employeeId === employeeId && r.courseId === courseId)));
+  const deleteTrainingRecord = async (employeeId, courseId) => {
+    const existing = trainingRecords.find((r) => r.employeeId === employeeId && r.courseId === courseId);
+    if (!existing) return;
+    const { error } = await supabase.from("training_records").delete().eq("id", existing.id);
+    if (error) {
+      console.error("deleteTrainingRecord error:", error);
+      alert("ลบผลอบรมไม่สำเร็จ: " + error.message);
+      return;
+    }
+    fetchTrainingRecords();
+  };
   const updateLocation = async (id, fields) => {
     // เคสรูปภาพอย่างเดียว — เก็บไว้ในหน่วยความจำเท่านั้น ยังไม่รองรับ Supabase Storage
     // (ดูโน้ตใน mapLocationRow) ไม่ต้องยิง Supabase หรือ refetch เลยเพื่อไม่ให้ค่าที่เพิ่งตั้ง
@@ -5546,6 +5646,7 @@ export default function JorPorPrototype() {
             employees={employees}
             trainingRequirements={trainingRequirements}
             trainingRecords={trainingRecords}
+            trainingCourses={trainingCourses}
             ltiBaselineDate={ltiBaselineDate}
             onSetLtiBaselineDate={setLtiBaselineDate}
             currentUser={currentUser}
