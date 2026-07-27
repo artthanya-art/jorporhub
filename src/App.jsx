@@ -227,6 +227,37 @@ function mapCourseRow(row) {
   return { id: row.id, name: row.name, validityDays: row.validity_period_days };
 }
 
+// ประเภท/รุ่นอุปกรณ์ PPE (ppe_catalog) — standard_ref/lifespan_days → camelCase
+// หมายเหตุ: ตาราง ppe_catalog ในสคีมาเดิมไม่มีคอลัมน์ "model" (มีแค่ category ซึ่งคนละความหมาย)
+// ต้องรัน ALTER TABLE ppe_catalog ADD COLUMN model VARCHAR(255); เพิ่มก่อนใช้งานส่วนนี้
+function mapPpeCatalogRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    model: row.model || "-",
+    standard: row.standard_ref || "-",
+    lifespanDays: row.lifespan_days,
+  };
+}
+
+// การเบิก PPE (ppe_issuance) — ไม่มีชื่อ/รุ่น/มาตรฐานอุปกรณ์เก็บซ้ำในตารางนี้ (เก็บแค่
+// ppe_catalog_id) จึงต้อง join กับ ppe_catalog ฝั่งโค้ดเสมอ (catalogById ส่งเข้ามาจากตอน fetch)
+function mapPpeIssuanceRow(row, catalogById) {
+  const cat = catalogById?.[row.ppe_catalog_id];
+  return {
+    id: row.id,
+    employeeId: row.employee_id,
+    catalogId: row.ppe_catalog_id,
+    name: cat?.name || "-",
+    model: cat?.model || "-",
+    standard: cat?.standard_ref || "-",
+    issuedDate: row.issued_date,
+    expiry: row.expiry_date,
+    quantity: row.quantity,
+    reason: row.issuance_reason,
+  };
+}
+
 // requirement ของ Training Matrix (position/hazard_type → course) — course_id เก็บเป็น
 // UUID ตรงๆ ไม่ต้องแปลงชื่อฟิลด์อะไรมาก
 function mapRequirementRow(row) {
@@ -1675,7 +1706,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
   });
   const [justAdded, setJustAdded] = useState(null);
 
-  const selectedCatalogItem = catalog.find((c) => c.id === Number(form.catalogId));
+  const selectedCatalogItem = catalog.find((c) => c.id === form.catalogId);
   const computedExpiry = selectedCatalogItem
     ? addDaysIso(form.receivedDate, selectedCatalogItem.lifespanDays)
     : null;
@@ -1685,8 +1716,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
   const submit = () => {
     if (!form.employeeId || !selectedCatalogItem || !form.receivedDate) return;
     onAddIssuance({
-      id: Date.now(),
-      employeeId: Number(form.employeeId),
+      employeeId: form.employeeId,
       catalogId: selectedCatalogItem.id,
       name: selectedCatalogItem.name,
       model: selectedCatalogItem.model || "-",
@@ -1696,7 +1726,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
       quantity: Number(form.quantity) || 1,
       reason: form.reason,
     });
-    setJustAdded({ employeeName: employees.find((e) => e.id === Number(form.employeeId))?.name, name: selectedCatalogItem.name, expiry: computedExpiry });
+    setJustAdded({ employeeName: employees.find((e) => e.id === form.employeeId)?.name, name: selectedCatalogItem.name, expiry: computedExpiry });
     setForm({ ...form, quantity: "1", receivedDate: todayIso(), reason: "initial_issue" });
   };
 
@@ -5074,6 +5104,9 @@ export default function JorPorPrototype() {
   const [trainingRecords, setTrainingRecordsData] = useState([]);
   const [incidents, setIncidentsData] = useState([]);
   const [incidentsLoading, setIncidentsLoading] = useState(false);
+  const [ppeCatalog, setPpeCatalogData] = useState([]);
+  const [ppe, setPpeData] = useState([]);
+  const [ppeLoading, setPpeLoading] = useState(false);
 
   // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
   // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
@@ -5387,6 +5420,119 @@ export default function JorPorPrototype() {
     );
   };
 
+  // ดึงประเภท/รุ่นอุปกรณ์ PPE — คืนค่า rows ดิบกลับไปด้วย (ไม่ใช่แค่ตั้ง state) เพราะ
+  // fetchPpeIssuance ต้องใช้ rows ดิบชุดเดียวกันมา join หาชื่อ/รุ่น/มาตรฐานทันทีโดยไม่ต้อง
+  // รอ state อัปเดตก่อน (setState เป็น async ถ้ารออ่านจาก state จะมี race condition)
+  async function fetchPpeCatalog() {
+    const { data, error } = await supabase
+      .from("ppe_catalog")
+      .select("id, name, model, standard_ref, lifespan_days")
+      .order("name");
+    if (error) {
+      console.error("fetchPpeCatalog error:", error);
+      return [];
+    }
+    setPpeCatalogData((data || []).map(mapPpeCatalogRow));
+    return data || [];
+  }
+
+  async function fetchPpeIssuance(catalogRows) {
+    const { data, error } = await supabase
+      .from("ppe_issuance")
+      .select("id, ppe_catalog_id, employee_id, quantity, issuance_reason, issued_date, expiry_date")
+      .order("issued_date", { ascending: false });
+    if (error) {
+      console.error("fetchPpeIssuance error:", error);
+      return;
+    }
+    const catalogById = {};
+    (catalogRows || []).forEach((c) => { catalogById[c.id] = c; });
+    setPpeData((data || []).map((r) => mapPpeIssuanceRow(r, catalogById)));
+  }
+
+  async function fetchPpe() {
+    setPpeLoading(true);
+    const catalogRows = await fetchPpeCatalog();
+    await fetchPpeIssuance(catalogRows);
+    setPpeLoading(false);
+  }
+
+  const addPpeCatalogItem = async (item) => {
+    const { data, error } = await supabase
+      .from("ppe_catalog")
+      .insert({
+        organization_id: currentUser.organizationId,
+        name: item.name,
+        model: item.model === "-" ? null : item.model,
+        standard_ref: item.standard === "-" ? null : item.standard,
+        lifespan_days: item.lifespanDays,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("เพิ่มประเภทอุปกรณ์ไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setPpeCatalogData([...ppeCatalog, mapPpeCatalogRow(data)]);
+  };
+
+  const updatePpeCatalogItem = async (id, fields) => {
+    const payload = {};
+    if (fields.model !== undefined) payload.model = fields.model === "-" ? null : fields.model;
+    if (fields.standard !== undefined) payload.standard_ref = fields.standard === "-" ? null : fields.standard;
+    if (fields.lifespanDays !== undefined) payload.lifespan_days = fields.lifespanDays;
+    const { error } = await supabase.from("ppe_catalog").update(payload).eq("id", id);
+    if (error) {
+      alert("บันทึกไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setPpeCatalogData(ppeCatalog.map((c) => (c.id === id ? { ...c, ...fields } : c)));
+  };
+
+  const deletePpeCatalogItem = async (id) => {
+    const { error } = await supabase.from("ppe_catalog").delete().eq("id", id);
+    if (error) {
+      // ลบไม่ได้ถ้ามีประวัติการเบิก (ppe_issuance) อ้างอิงประเภทนี้อยู่ (foreign key constraint)
+      alert("ลบไม่สำเร็จ: มีประวัติการเบิกที่ใช้ประเภทอุปกรณ์นี้อยู่แล้ว ลบประวัติการเบิกก่อนจึงจะลบประเภทนี้ได้ (" + error.message + ")");
+      return;
+    }
+    setPpeCatalogData(ppeCatalog.filter((c) => c.id !== id));
+  };
+
+  const addPpeIssuance = async (record) => {
+    const { data, error } = await supabase
+      .from("ppe_issuance")
+      .insert({
+        organization_id: currentUser.organizationId,
+        ppe_catalog_id: record.catalogId,
+        employee_id: record.employeeId,
+        quantity: record.quantity,
+        issuance_reason: record.reason,
+        issued_by: currentUser.id,
+        issued_date: record.issuedDate,
+        expiry_date: record.expiry,
+        status: "active",
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกการเบิกไม่สำเร็จ: " + error.message);
+      return;
+    }
+    const catalogById = {};
+    ppeCatalog.forEach((c) => { catalogById[c.id] = { name: c.name, model: c.model, standard_ref: c.standard }; });
+    setPpeData([mapPpeIssuanceRow(data, catalogById), ...ppe]);
+  };
+
+  const deletePpeIssuance = async (id) => {
+    const { error } = await supabase.from("ppe_issuance").delete().eq("id", id);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setPpeData(ppe.filter((p) => p.id !== id));
+  };
+
   useEffect(() => {
     if (currentUser && !currentUser.isAdmin) {
       fetchEmployees();
@@ -5395,6 +5541,7 @@ export default function JorPorPrototype() {
       fetchTrainingRequirements();
       fetchTrainingRecords();
       fetchIncidents();
+      fetchPpe();
     }
   }, [currentUser?.id]);
 
@@ -5586,10 +5733,6 @@ export default function JorPorPrototype() {
 
   const equipment = tenant.equipment;
   const setEquipment = (val) => updateTenant({ equipment: val });
-  const ppe = tenant.ppe;
-  const setPpe = (val) => updateTenant({ ppe: val });
-  const ppeCatalog = tenant.ppeCatalog;
-  const setPpeCatalog = (val) => updateTenant({ ppeCatalog: val });
   const noncompliance = tenant.noncompliance;
   const setNoncompliance = (val) => updateTenant({ noncompliance: val });
   const environmentalMeasurements = tenant.environmentalMeasurements;
@@ -5602,12 +5745,6 @@ export default function JorPorPrototype() {
 
   const addNoncompliance = (record) => setNoncompliance([record, ...noncompliance]);
   const deleteNoncompliance = (id) => setNoncompliance(noncompliance.filter((r) => r.id !== id));
-  const addPpeIssuance = (record) => setPpe([...ppe, record]);
-  const deletePpeIssuance = (id) => setPpe(ppe.filter((p) => p.id !== id));
-  const addPpeCatalogItem = (item) => setPpeCatalog([...ppeCatalog, item]);
-  const updatePpeCatalogItem = (id, fields) =>
-    setPpeCatalog(ppeCatalog.map((c) => (c.id === id ? { ...c, ...fields } : c)));
-  const deletePpeCatalogItem = (id) => setPpeCatalog(ppeCatalog.filter((c) => c.id !== id));
   const addEmployee = async (emp) => {
     const { error } = await supabase.from("employees").insert(toEmployeeRow(emp, currentUser.organizationId));
     if (error) {
