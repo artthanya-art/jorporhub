@@ -4101,11 +4101,12 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
 
   const submit = () => {
     if (!form.position && !form.hazardType) return; // ต้องมีอย่างน้อย 1 อย่าง
+    if (!form.courseId) return; // กันไว้กรณียังไม่มีหลักสูตรในระบบให้เลือกเลย (dropdown ว่าง)
     onAddRequirement({
       id: Date.now(),
       position: form.position || null,
       hazardType: form.hazardType || null,
-      courseId: Number(form.courseId),
+      courseId: form.courseId,
     });
     setForm({ position: "", hazardType: "", courseId: courses[0]?.id ?? "" });
     setShowForm(false);
@@ -4179,13 +4180,19 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
               </div>
               <div>
                 <label className="text-xs text-slate-500 block mb-1">หลักสูตรที่ต้องอบรม</label>
-                <select
-                  value={form.courseId}
-                  onChange={(e) => setForm({ ...form, courseId: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                {courses.length === 0 ? (
+                  <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                    ยังไม่มีหลักสูตรในระบบ กรุณาติดต่อผู้ดูแลระบบให้เพิ่มหลักสูตรก่อน
+                  </p>
+                ) : (
+                  <select
+                    value={form.courseId}
+                    onChange={(e) => setForm({ ...form, courseId: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                )}
               </div>
             </div>
             <div className="flex justify-end gap-2">
