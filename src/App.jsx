@@ -916,7 +916,7 @@ function Dashboard({
 // Incidents
 // ---------------------------------------------------------------
 
-function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees }) {
+function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [locationMode, setLocationMode] = useState("select"); // "select" | "custom"
@@ -955,6 +955,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onDeleteInci
         onBack={() => setSelectedId(null)}
         onUpdate={onUpdate}
         onAddProgress={onAddProgress}
+        onRemoveProgress={onRemoveProgress}
         onAddInjured={onAddInjured}
         onUpdateInjured={onUpdateInjured}
         onRemoveInjured={onRemoveInjured}
@@ -1136,7 +1137,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onDeleteInci
 // Incident detail — แก้ไขสถานะ/รายละเอียด และบันทึกความคืบหน้า
 // ---------------------------------------------------------------
 
-function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, onAddInjured, onUpdateInjured, onRemoveInjured }) {
+function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, onRemoveProgress, onAddInjured, onUpdateInjured, onRemoveInjured }) {
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState({
     location: incident.location,
@@ -1202,87 +1203,6 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
           </p>
         </div>
         <Badge tone={statusTone(incident.status)}>{incident.status}</Badge>
-      </div>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">พนักงานที่ได้รับบาดเจ็บ</p>
-        <Card className="p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-left">
-                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                <th className="px-4 py-2.5 font-medium">ลักษณะการบาดเจ็บ</th>
-                <th className="px-4 py-2.5 font-medium">จำนวนวันหยุดงาน</th>
-                <th className="px-4 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {incident.injuredEmployees.map((e) => (
-                <tr key={e.rowId} className="border-t border-slate-100">
-                  <td className="px-4 py-2.5">{nameOf(e.employeeId)}</td>
-                  <td className="px-4 py-2.5">
-                    <input
-                      value={e.injuryType || ""}
-                      onChange={(ev) => updateInjuredField(e.rowId, "injuryType", ev.target.value)}
-                      placeholder="เช่น มือบาดจากใบมีด"
-                      className="w-full min-w-[10rem] border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                    />
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <input
-                      type="number"
-                      min="0"
-                      value={e.lostWorkdays}
-                      onChange={(ev) => updateInjuredField(e.rowId, "lostWorkdays", ev.target.value)}
-                      className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                    />
-                    <span className="text-slate-500 ml-1.5">วัน</span>
-                    {e.lostWorkdays > 0 && <span className="text-xs text-red-600 ml-2">(LTI)</span>}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button onClick={() => removeInjuredEmployee(e.rowId)} className="text-xs text-slate-400 underline hover:text-red-600">
-                      ลบ
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {incident.injuredEmployees.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-3 text-sm text-slate-400">ไม่มีพนักงานได้รับบาดเจ็บที่บันทึกไว้</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50">
-            <select
-              value={newInjured.employeeId}
-              onChange={(e) => setNewInjured({ ...newInjured, employeeId: e.target.value })}
-              className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-            >
-              <option value="">เลือกพนักงาน...</option>
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-            <input
-              value={newInjured.injuryType}
-              onChange={(e) => setNewInjured({ ...newInjured, injuryType: e.target.value })}
-              placeholder="ลักษณะการบาดเจ็บ"
-              className="flex-1 min-w-[9rem] border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-            />
-            <input
-              type="number"
-              min="0"
-              value={newInjured.lostWorkdays}
-              onChange={(e) => setNewInjured({ ...newInjured, lostWorkdays: e.target.value })}
-              className="w-20 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-              placeholder="วัน"
-            />
-            <button onClick={addInjuredEmployee} className="flex items-center gap-1 text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg">
-              <Plus size={14} /> เพิ่มพนักงาน
-            </button>
-          </div>
-        </Card>
       </div>
 
       <Card>
@@ -1351,6 +1271,105 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
       </Card>
 
       <div>
+        <p className="text-sm font-semibold text-slate-900 mb-3">พนักงานที่ได้รับบาดเจ็บ</p>
+        <Card className="p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-left">
+                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
+                <th className="px-4 py-2.5 font-medium">ลักษณะการบาดเจ็บ</th>
+                <th className="px-4 py-2.5 font-medium">จำนวนวันหยุดงาน</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {incident.injuredEmployees.map((e) => (
+                <tr key={e.rowId} className="border-t border-slate-100">
+                  <td className="px-4 py-2.5">{nameOf(e.employeeId)}</td>
+                  <td className="px-4 py-2.5">
+                    <input
+                      value={e.injuryType || ""}
+                      onChange={(ev) => updateInjuredField(e.rowId, "injuryType", ev.target.value)}
+                      placeholder="เช่น มือบาดจากใบมีด"
+                      className="w-full min-w-[10rem] border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="number"
+                      min="0"
+                      value={e.lostWorkdays}
+                      onChange={(ev) => updateInjuredField(e.rowId, "lostWorkdays", ev.target.value)}
+                      className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                    />
+                    <span className="text-slate-500 ml-1.5">วัน</span>
+                    {e.lostWorkdays > 0 && <span className="text-xs text-red-600 ml-2">(LTI)</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button onClick={() => removeInjuredEmployee(e.rowId)} className="text-xs text-slate-400 underline hover:text-red-600">
+                      ลบ
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {incident.injuredEmployees.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-3 text-sm text-slate-400">ไม่มีพนักงานได้รับบาดเจ็บที่บันทึกไว้</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          </div>
+          <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
+            <p className="text-xs font-medium text-slate-600 mb-2">เพิ่มพนักงานที่ได้รับบาดเจ็บ</p>
+            <div className="grid sm:grid-cols-3 gap-2 mb-2">
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
+                <select
+                  value={newInjured.employeeId}
+                  onChange={(e) => setNewInjured({ ...newInjured, employeeId: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                >
+                  <option value="">เลือกพนักงาน...</option>
+                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
+                <input
+                  value={newInjured.injuryType}
+                  onChange={(e) => setNewInjured({ ...newInjured, injuryType: e.target.value })}
+                  placeholder="เช่น มือบาดจากใบมีด"
+                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">จำนวนวันหยุดงาน</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={newInjured.lostWorkdays}
+                  onChange={(e) => setNewInjured({ ...newInjured, lostWorkdays: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={addInjuredEmployee}
+                disabled={!newInjured.employeeId}
+                className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-4 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={15} /> บันทึกพนักงานบาดเจ็บ
+              </button>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div>
         <p className="text-sm font-semibold text-slate-900 mb-3">ความคืบหน้า</p>
         <Card className="mb-4">
           <label className="text-xs text-slate-500 block mb-1">บันทึกความคืบหน้าใหม่</label>
@@ -1380,36 +1399,31 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
         </Card>
 
         <div className="space-y-4">
-          {[...incident.updates].reverse().map((u, i) => {
-            const originalIndex = incident.updates.length - 1 - i;
-            return (
-              <div key={i} className="flex gap-3">
-                <div className="flex flex-col items-center pt-1.5">
-                  <div className="w-2 h-2 rounded-full bg-slate-400" />
-                  {i < incident.updates.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
-                </div>
-                <div className="pb-4 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-800">
-                      {formatThaiDate(u.date)} · {u.by}
-                      {u.newStatus && (
-                        <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
-                          เปลี่ยนสถานะเป็น {u.newStatus}
-                        </span>
-                      )}
-                    </p>
-                    <ConfirmDeleteButton
-                      className="shrink-0"
-                      onConfirm={() =>
-                        onUpdate(incident.id, { updates: incident.updates.filter((_, idx) => idx !== originalIndex) })
-                      }
-                    />
-                  </div>
-                  <p className="text-sm text-slate-600 mt-1">{u.note}</p>
-                </div>
+          {[...incident.updates].reverse().map((u, i, arr) => (
+            <div key={u.rowId} className="flex gap-3">
+              <div className="flex flex-col items-center pt-1.5">
+                <div className="w-2 h-2 rounded-full bg-slate-400" />
+                {i < arr.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
               </div>
-            );
-          })}
+              <div className="pb-4 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-800">
+                    {formatThaiDate(u.date)} · {u.by}
+                    {u.newStatus && (
+                      <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                        เปลี่ยนสถานะเป็น {u.newStatus}
+                      </span>
+                    )}
+                  </p>
+                  <ConfirmDeleteButton
+                    className="shrink-0"
+                    onConfirm={() => onRemoveProgress(incident.id, u.rowId)}
+                  />
+                </div>
+                <p className="text-sm text-slate-600 mt-1">{u.note}</p>
+              </div>
+            </div>
+          ))}
           {incident.updates.length === 0 && (
             <p className="text-sm text-slate-400">ยังไม่มีการบันทึกความคืบหน้า</p>
           )}
@@ -5358,6 +5372,21 @@ export default function JorPorPrototype() {
     );
   };
 
+  // ลบบันทึกความคืบหน้า 1 รายการ (ไม่ปรับ incidents.status กลับคืน เพราะไม่ทราบว่าค่าก่อนหน้า
+  // ควรเป็นอะไร — จป. ต้องแก้สถานะเองที่การ์ด "รายละเอียดและสถานะ" ถ้าต้องการ)
+  const removeIncidentProgress = async (incidentId, rowId) => {
+    const { error } = await supabase.from("incident_updates").delete().eq("id", rowId);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setIncidentsData(
+      incidents.map((inc) =>
+        inc.id === incidentId ? { ...inc, updates: inc.updates.filter((u) => u.rowId !== rowId) } : inc
+      )
+    );
+  };
+
   useEffect(() => {
     if (currentUser && !currentUser.isAdmin) {
       fetchEmployees();
@@ -5888,6 +5917,7 @@ export default function JorPorPrototype() {
             onAdd={addIncident}
             onUpdate={updateIncident}
             onAddProgress={addIncidentProgress}
+            onRemoveProgress={removeIncidentProgress}
             onDeleteIncident={deleteIncident}
             onAddInjured={addInjuredEmployee}
             onUpdateInjured={updateInjuredEmployee}
