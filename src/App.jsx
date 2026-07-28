@@ -1663,23 +1663,28 @@ function PpeByItemView({ employees, ppe }) {
   );
 }
 
-function NoncomplianceView({ employees, records, onAdd, onDelete }) {
+function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ employeeId: employees[0]?.id ?? "", ppeName: "", location: "", date: todayIso(), action: "เตือนวาจา", notes: "" });
+  const [form, setForm] = useState({ employeeId: employees[0]?.id ?? "", ppeName: "", location: locations[0]?.name ?? "", date: todayIso(), action: "เตือนวาจา", notes: "" });
   const nameOf = (id) => employees.find((e) => e.id === id)?.name ?? "-";
 
-  // employees มาจาก Supabase (โหลดแบบ async) — ถ้าคอมโพเนนต์นี้ mount ก่อนโหลดเสร็จ ค่าเริ่มต้น
-  // จะติดอยู่ที่ "" ตลอดไปถ้าไม่ sync ใหม่ตอนข้อมูลมาถึงจริง (ดูคำอธิบายเดียวกันใน PpeIssuanceView)
+  // employees/locations มาจาก Supabase (โหลดแบบ async) — ถ้าคอมโพเนนต์นี้ mount ก่อนโหลดเสร็จ
+  // ค่าเริ่มต้นจะติดอยู่ที่ "" ตลอดไปถ้าไม่ sync ใหม่ตอนข้อมูลมาถึงจริง (ดูคำอธิบายเดียวกันใน PpeIssuanceView)
   useEffect(() => {
     if (!form.employeeId && employees.length > 0) {
       setForm((f) => ({ ...f, employeeId: employees[0].id }));
     }
   }, [employees]);
+  useEffect(() => {
+    if (!form.location && locations.length > 0) {
+      setForm((f) => ({ ...f, location: locations[0].name }));
+    }
+  }, [locations]);
 
   const submit = () => {
     if (!form.employeeId || !form.ppeName.trim() || !form.location.trim()) return;
     onAdd({ ...form });
-    setForm({ employeeId: employees[0]?.id ?? "", ppeName: "", location: "", date: todayIso(), action: "เตือนวาจา", notes: "" });
+    setForm({ employeeId: employees[0]?.id ?? "", ppeName: "", location: locations[0]?.name ?? "", date: todayIso(), action: "เตือนวาจา", notes: "" });
     setShowForm(false);
   };
 
@@ -1729,12 +1734,14 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="text-xs text-slate-500 block mb-1">สถานที่พบเหตุ</label>
-              <input
+              <select
                 value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
-                placeholder="เช่น ไลน์ผลิต 2"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              />
+              >
+                <option value="">-- เลือกสถานที่ --</option>
+                {locations.map((l) => <option key={l.id} value={l.name}>{l.name}</option>)}
+              </select>
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">การดำเนินการ</label>
@@ -1774,7 +1781,7 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
             </button>
             <button
               onClick={submit}
-              disabled={!form.employeeId}
+              disabled={!form.employeeId || !form.location}
               className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed"
             >
               บันทึก
@@ -2219,11 +2226,11 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
 // Unsafe acts (การกระทำที่ไม่ปลอดภัย) — เดิมเป็นแท็บในหน้า PPE ย้ายมาเป็นเมนูหลักแยก
 // ---------------------------------------------------------------
 
-function UnsafeActsPage({ employees, records, onAdd, onDelete }) {
+function UnsafeActsPage({ employees, locations, records, onAdd, onDelete }) {
   return (
     <div className="space-y-5">
       <h1 className="text-lg font-semibold text-slate-900">บันทึกการกระทำที่ไม่ปลอดภัย</h1>
-      <NoncomplianceView employees={employees} records={records} onAdd={onAdd} onDelete={onDelete} />
+      <NoncomplianceView employees={employees} locations={locations} records={records} onAdd={onAdd} onDelete={onDelete} />
     </div>
   );
 }
@@ -6483,7 +6490,7 @@ export default function JorPorPrototype() {
           />
         )}
         {page === "unsafeActs" && (
-          <UnsafeActsPage employees={employees} records={noncompliance} onAdd={addNoncompliance} onDelete={deleteNoncompliance} />
+          <UnsafeActsPage employees={employees} locations={locations} records={noncompliance} onAdd={addNoncompliance} onDelete={deleteNoncompliance} />
         )}
         {page === "equipment" && (
           <EquipmentPage
