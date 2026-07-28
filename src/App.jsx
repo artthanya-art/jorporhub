@@ -150,6 +150,7 @@ function mapUserRow(row) {
     name: row.full_name,
     companyName: row.organization?.name ?? "-",
     organizationId: row.organization?.id ?? null,
+    ltiBaselineDate: row.organization?.lti_baseline_date ? row.organization.lti_baseline_date.slice(0, 10) : null,
     email: row.email,
     userType: row.role === "super_admin" ? null : planName,
     status: row.approval_status,
@@ -161,7 +162,7 @@ function mapUserRow(row) {
 const USER_SELECT_QUERY = `
   id, email, full_name, role, approval_status, created_at,
   organization:organizations (
-    id, name,
+    id, name, lti_baseline_date,
     subscriptions ( status, plan:subscription_plans ( name ) )
   )
 `;
@@ -5887,8 +5888,18 @@ export default function JorPorPrototype() {
   const tenant = tenantStore[currentUser.id] || createEmptyTenantData();
   const updateTenant = (patch) => setTenantStore({ ...tenantStore, [currentUser.id]: { ...tenant, ...patch } });
 
-  const ltiBaselineDate = tenant.ltiBaselineDate;
-  const setLtiBaselineDate = (val) => updateTenant({ ltiBaselineDate: val });
+  const ltiBaselineDate = currentUser.ltiBaselineDate;
+  const setLtiBaselineDate = async (val) => {
+    const { error } = await supabase
+      .from("organizations")
+      .update({ lti_baseline_date: val })
+      .eq("id", currentUser.organizationId);
+    if (error) {
+      alert("บันทึกวันฐาน LTI ไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setCurrentUser({ ...currentUser, ltiBaselineDate: val });
+  };
 
   // ข้อจำกัดจำนวนพนักงานตามประเภทผู้ใช้งาน (เช่น Free บันทึกได้ไม่เกิน 5 คน)
   const employeeLimit = tierLimits[currentUser.userType]?.maxEmployees ?? null;
