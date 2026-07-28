@@ -1094,7 +1094,33 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
     location: "", type: "หกล้ม", severity: "ปานกลาง", description: "",
     incidentDate: todayIso(), incidentTime: "", department: "",
     firstAidGiven: "", probableCause: "", reporterName: "", reporterPhone: "",
+    injuredEmployees: [],
   });
+  const [newInjured, setNewInjured] = useState({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
+  const positionOf = (id) => employees.find((e) => e.id === id)?.position ?? "-";
+  const nameOfEmp = (id) => employees.find((e) => e.id === id)?.name ?? "-";
+
+  const addInjuredToForm = () => {
+    if (!newInjured.employeeId) return;
+    setForm({
+      ...form,
+      injuredEmployees: [
+        ...form.injuredEmployees,
+        {
+          tempId: Date.now(),
+          employeeId: newInjured.employeeId,
+          lostWorkdays: Number(newInjured.lostWorkdays) || 0,
+          injuryType: newInjured.injuryType || "-",
+          bodyPart: newInjured.bodyPart || "-",
+        },
+      ],
+    });
+    setNewInjured({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
+  };
+
+  const removeInjuredFromForm = (tempId) => {
+    setForm({ ...form, injuredEmployees: form.injuredEmployees.filter((e) => e.tempId !== tempId) });
+  };
 
   const autoLatestIncidentDate = incidents.length
     ? incidents.reduce((latest, i) => (i.incidentDate > latest ? i.incidentDate : latest), incidents[0].incidentDate)
@@ -1111,7 +1137,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
       incidentTime: form.incidentTime,
       department: form.department || "-",
       status: "รายงานแล้ว",
-      injuredEmployees: [],
+      injuredEmployees: form.injuredEmployees,
       description: form.description || "-",
       firstAidGiven: form.firstAidGiven || "-",
       probableCause: form.probableCause || "-",
@@ -1123,7 +1149,9 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
       location: "", type: "หกล้ม", severity: "ปานกลาง", description: "",
       incidentDate: todayIso(), incidentTime: "", department: "",
       firstAidGiven: "", probableCause: "", reporterName: "", reporterPhone: "",
+      injuredEmployees: [],
     });
+    setNewInjured({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
     setShowForm(false);
   };
 
@@ -1261,9 +1289,90 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              เพิ่มชื่อพนักงานที่ได้รับบาดเจ็บ ตำแหน่งงาน ส่วนของร่างกายที่บาดเจ็บ และจำนวนวันหยุดงานได้ที่หน้ารายละเอียดหลังบันทึกรายงานนี้
-            </p>
+          </div>
+          <div className="mb-4 border border-slate-200 rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
+              <p className="text-xs font-medium text-slate-600">พนักงานที่ได้รับบาดเจ็บ/เกี่ยวข้อง (ถ้ามี)</p>
+            </div>
+            {form.injuredEmployees.length > 0 && (
+              <div className="divide-y divide-slate-100">
+                {form.injuredEmployees.map((e) => (
+                  <div key={e.tempId} className="px-3 py-2 flex items-center justify-between gap-2 text-sm">
+                    <div>
+                      <span className="font-medium">{nameOfEmp(e.employeeId)}</span>
+                      <span className="text-slate-400"> · {positionOf(e.employeeId)}</span>
+                      <div className="text-xs text-slate-500">
+                        {e.bodyPart !== "-" && <>ส่วนที่บาดเจ็บ: {e.bodyPart} · </>}
+                        {e.injuryType !== "-" && <>{e.injuryType} · </>}
+                        หยุดงาน {e.lostWorkdays} วัน
+                      </div>
+                    </div>
+                    <button onClick={() => removeInjuredFromForm(e.tempId)} className="text-xs text-slate-400 underline hover:text-red-600 shrink-0">
+                      ลบ
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="p-3 bg-white">
+              <div className="grid sm:grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
+                  <select
+                    value={newInjured.employeeId}
+                    onChange={(e) => setNewInjured({ ...newInjured, employeeId: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                  >
+                    <option value="">เลือกพนักงาน...</option>
+                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                  {newInjured.employeeId && (
+                    <p className="text-xs text-slate-400 mt-1">ตำแหน่งงาน: {positionOf(newInjured.employeeId)}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">ส่วนของร่างกายที่บาดเจ็บ</label>
+                  <input
+                    value={newInjured.bodyPart}
+                    onChange={(e) => setNewInjured({ ...newInjured, bodyPart: e.target.value })}
+                    placeholder="เช่น มือขวา"
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
+                  <input
+                    value={newInjured.injuryType}
+                    onChange={(e) => setNewInjured({ ...newInjured, injuryType: e.target.value })}
+                    placeholder="เช่น มือบาดจากใบมีด"
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">จำนวนวันหยุดงาน</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newInjured.lostWorkdays}
+                    onChange={(e) => setNewInjured({ ...newInjured, lostWorkdays: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={addInjuredToForm}
+                  disabled={!newInjured.employeeId}
+                  className="flex items-center gap-1.5 text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Plus size={13} /> เพิ่มในรายการ
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">แก้ไขหรือเพิ่มเติมภายหลังได้ที่หน้ารายละเอียดของอุบัติเหตุนี้</p>
+            </div>
           </div>
           <div className="mb-3">
             <label className="text-xs text-slate-500 block mb-1">เหตุการณ์ที่เกิดขึ้น (บรรยายสั้นๆ ว่าเกิดอะไรขึ้น)</label>
@@ -5671,6 +5780,7 @@ export default function JorPorPrototype() {
       .order("incident_date", { ascending: false });
     if (error) {
       console.error("fetchIncidents error:", error);
+      alert("โหลดข้อมูลอุบัติเหตุไม่สำเร็จ: " + error.message + " (ตรวจสอบว่ารัน SQL เพิ่มคอลัมน์ล่าสุดใน Supabase ครบแล้วหรือยัง)");
       setIncidentsLoading(false);
       return;
     }
@@ -5680,20 +5790,22 @@ export default function JorPorPrototype() {
     let userNameById = {};
 
     if (incidentIds.length > 0) {
-      const { data: injuredRows } = await supabase
+      const { data: injuredRows, error: injuredErr } = await supabase
         .from("incident_injured_employees")
         .select("id, incident_id, employee_id, lost_workdays, injury_description, body_part")
         .in("incident_id", incidentIds);
+      if (injuredErr) console.error("fetch incident_injured_employees error:", injuredErr);
       (injuredRows || []).forEach((e) => {
         if (!injuredByIncident[e.incident_id]) injuredByIncident[e.incident_id] = [];
         injuredByIncident[e.incident_id].push(e);
       });
 
-      const { data: updateRows } = await supabase
+      const { data: updateRows, error: updatesErr } = await supabase
         .from("incident_updates")
         .select("id, incident_id, updated_by, note, new_status, created_at")
         .in("incident_id", incidentIds)
         .order("created_at", { ascending: true });
+      if (updatesErr) console.error("fetch incident_updates error:", updatesErr);
       (updateRows || []).forEach((u) => {
         if (!updatesByIncident[u.incident_id]) updatesByIncident[u.incident_id] = [];
         updatesByIncident[u.incident_id].push(u);
@@ -5739,7 +5851,29 @@ export default function JorPorPrototype() {
       alert("บันทึกอุบัติเหตุไม่สำเร็จ: " + error.message);
       return;
     }
-    setIncidentsData([mapIncidentRow(data, [], []), ...incidents]);
+
+    let injuredRows = [];
+    if (inc.injuredEmployees?.length > 0) {
+      const { data: insertedInjured, error: injuredErr } = await supabase
+        .from("incident_injured_employees")
+        .insert(
+          inc.injuredEmployees.map((e) => ({
+            incident_id: data.id,
+            employee_id: e.employeeId,
+            lost_workdays: e.lostWorkdays,
+            injury_description: e.injuryType === "-" ? null : e.injuryType,
+            body_part: e.bodyPart === "-" ? null : e.bodyPart,
+          }))
+        )
+        .select();
+      if (injuredErr) {
+        alert("บันทึกอุบัติเหตุสำเร็จ แต่บันทึกพนักงานบาดเจ็บไม่สำเร็จ: " + injuredErr.message + " — เพิ่มใหม่ได้ที่หน้ารายละเอียด");
+      } else {
+        injuredRows = insertedInjured || [];
+      }
+    }
+
+    setIncidentsData([mapIncidentRow(data, injuredRows, []), ...incidents]);
   };
 
   const updateIncident = async (incidentId, fields) => {
