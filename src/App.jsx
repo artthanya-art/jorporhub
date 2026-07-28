@@ -228,8 +228,42 @@ function mapCourseRow(row) {
 }
 
 // ---------------------------------------------------------------
-// อุปกรณ์ความปลอดภัย (safety_equipment_units) <-> Supabase mapping
-// ---------------------------------------------------------------
+// ตรวจวัดสิ่งแวดล้อม (environmental_measurements) <-> Supabase mapping
+// ตารางเก็บ 1 แถว = 1 จุดตรวจวัด แต่หน้าจอต้องการ "1 รอบตรวจวัด" ที่รวมหลายจุดย่อยไว้ด้วยกัน
+// จึง group แถวที่มี location_id + measurement_type + measured_at ตรงกันทุกแถวเป็นก้อนเดียว
+// (แถวเหล่านี้จะถูก insert พร้อมกันเป็นชุดเดียวเสมอตอนบันทึกใหม่ ทำให้ 3 ค่านี้ตรงกันเป๊ะ)
+function mapMeasurementRowsToRounds(rows) {
+  const groups = {};
+  (rows || []).forEach((r) => {
+    const key = `${r.location_id}__${r.measurement_type}__${r.measured_at}`;
+    if (!groups[key]) {
+      groups[key] = {
+        id: key,
+        rowIds: [],
+        locationId: r.location_id,
+        measurementType: r.measurement_type,
+        unit: r.unit,
+        standardLimit: r.standard_limit,
+        measuredAt: r.measured_at ? r.measured_at.slice(0, 10) : "",
+        nextDue: r.next_measurement_due,
+        notes: r.notes || "-",
+        correctionStatus: r.correction_status || "none",
+        points: [],
+        planFileName: null,
+        planFileUrl: null,
+      };
+    }
+    groups[key].rowIds.push(r.id);
+    groups[key].points.push({ label: r.point_label || "-", value: r.measured_value, result: r.result });
+  });
+  return Object.values(groups).map((g) => ({
+    ...g,
+    failCount: g.points.filter((p) => p.result === "fail").length,
+    result: g.points.some((p) => p.result === "fail") ? "fail" : "pass",
+  }));
+}
+
+
 const equipmentCategoryUiToDb = {
   "SCBA": "scba", "เครื่องวัดแก๊ส": "gas_detector", "ถังดับเพลิง": "fire_extinguisher",
   "ฝักบัวฉุกเฉิน": "emergency_shower", "ตู้สายฉีดน้ำดับเพลิง": "fire_hose_cabinet",
@@ -5184,6 +5218,8 @@ export default function JorPorPrototype() {
   const [ppeLoading, setPpeLoading] = useState(false);
   const [equipment, setEquipmentData] = useState([]);
   const [equipmentLoading, setEquipmentLoading] = useState(false);
+  const [environmentalMeasurements, setEnvironmentalMeasurementsData] = useState([]);
+  const [environmentalLoading, setEnvironmentalLoading] = useState(false);
 
   // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
   // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
@@ -5620,6 +5656,7 @@ export default function JorPorPrototype() {
       fetchIncidents();
       fetchPpe();
       fetchEquipment();
+      fetchEnvironmentalMeasurements();
     }
   }, [currentUser?.id]);
 
@@ -5811,8 +5848,6 @@ export default function JorPorPrototype() {
 
   const noncompliance = tenant.noncompliance;
   const setNoncompliance = (val) => updateTenant({ noncompliance: val });
-  const environmentalMeasurements = tenant.environmentalMeasurements;
-  const setEnvironmentalMeasurements = (val) => updateTenant({ environmentalMeasurements: val });
   const ltiBaselineDate = tenant.ltiBaselineDate;
   const setLtiBaselineDate = (val) => updateTenant({ ltiBaselineDate: val });
 
@@ -5897,11 +5932,105 @@ export default function JorPorPrototype() {
     }
     fetchLocations();
   };
-  const addEnvironmentalMeasurement = (m) => setEnvironmentalMeasurements([...environmentalMeasurements, m]);
-  const updateEnvironmentalMeasurement = (id, fields) =>
-    setEnvironmentalMeasurements(environmentalMeasurements.map((m) => (m.id === id ? { ...m, ...fields } : m)));
-  const deleteEnvironmentalMeasurement = (id) =>
-    setEnvironmentalMeasurements(environmentalMeasurements.filter((m) => m.id !== id));
+  async function fetchEnvironmentalMeasurements() {
+    setEnvironmentalLoading(true);
+    const { data, error } = await supabase
+      .from("environmental_measurements")
+      .select("id, location_id, measurement_type, measured_value, unit, standard_limit, point_label, result, measured_at, next_measurement_due, notes, correction_status")
+      .order("measured_at", { ascending: false });
+    if (error) {
+      console.error("fetchEnvironmentalMeasurements error:", error);
+      setEnvironmentalLoading(false);
+      return;
+    }
+    setEnvironmentalMeasurementsData(mapMeasurementRowsToRounds(data));
+    setEnvironmentalLoading(false);
+  }
+
+  // บันทึกผลตรวจวัด 1 รอบ = insert หลายแถวพร้อมกัน (1 แถวต่อ 1 จุดย่อย) โดยทุกแถวใช้
+  // location_id/measurement_type/measured_at ชุดเดียวกัน เพื่อให้ตอนอ่านกลับมา group เป็นรอบเดียวได้
+  const addEnvironmentalMeasurement = async (record) => {
+    const rows = record.points.map((p) => ({
+      organization_id: currentUser.organizationId,
+      location_id: record.locationId,
+      measurement_type: record.measurementType,
+      measured_value: p.value,
+      unit: record.unit,
+      standard_limit: record.standardLimit,
+      point_label: p.label,
+      result: p.result,
+      measured_by: currentUser.id,
+      measured_at: record.measuredAt,
+      next_measurement_due: record.nextDue,
+      notes: record.notes === "-" ? null : record.notes,
+      correction_status: "none",
+    }));
+    const { data, error } = await supabase.from("environmental_measurements").insert(rows).select();
+    if (error) {
+      alert("บันทึกผลตรวจวัดไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setEnvironmentalMeasurementsData([...mapMeasurementRowsToRounds(data), ...environmentalMeasurements]);
+  };
+
+  // fields.points มีค่า = แก้ไขทั้งรอบ (ลบแถวเดิมทั้งหมดของรอบนี้แล้ว insert ใหม่ เพราะจำนวน
+  // จุดย่อยอาจเปลี่ยนไป ง่ายกว่าการพยายาม diff จุดย่อยทีละจุด)
+  // fields.points ไม่มีค่า = แก้แค่ฟิลด์เดียว (เช่น correctionStatus จากปุ่มเปลี่ยนสถานะด่วน) → update ทุกแถวของรอบนี้
+  const updateEnvironmentalMeasurement = async (id, fields) => {
+    const round = environmentalMeasurements.find((r) => r.id === id);
+    if (!round) return;
+
+    if (fields.points) {
+      const { error: delErr } = await supabase.from("environmental_measurements").delete().in("id", round.rowIds);
+      if (delErr) {
+        alert("บันทึกการแก้ไขไม่สำเร็จ: " + delErr.message);
+        return;
+      }
+      const rows = fields.points.map((p) => ({
+        organization_id: currentUser.organizationId,
+        location_id: round.locationId,
+        measurement_type: fields.measurementType,
+        measured_value: p.value,
+        unit: fields.unit,
+        standard_limit: fields.standardLimit,
+        point_label: p.label,
+        result: p.result,
+        measured_by: currentUser.id,
+        measured_at: fields.measuredAt,
+        next_measurement_due: fields.nextDue,
+        notes: fields.notes === "-" ? null : fields.notes,
+        correction_status: round.correctionStatus || "none",
+      }));
+      const { data, error } = await supabase.from("environmental_measurements").insert(rows).select();
+      if (error) {
+        alert("บันทึกการแก้ไขไม่สำเร็จ: " + error.message);
+        return;
+      }
+      const [newRound] = mapMeasurementRowsToRounds(data);
+      setEnvironmentalMeasurementsData(environmentalMeasurements.map((r) => (r.id === id ? newRound : r)));
+    } else {
+      const payload = {};
+      if (fields.correctionStatus !== undefined) payload.correction_status = fields.correctionStatus;
+      const { error } = await supabase.from("environmental_measurements").update(payload).in("id", round.rowIds);
+      if (error) {
+        alert("บันทึกไม่สำเร็จ: " + error.message);
+        return;
+      }
+      setEnvironmentalMeasurementsData(environmentalMeasurements.map((r) => (r.id === id ? { ...r, ...fields } : r)));
+    }
+  };
+
+  const deleteEnvironmentalMeasurement = async (id) => {
+    const round = environmentalMeasurements.find((r) => r.id === id);
+    if (!round) return;
+    const { error } = await supabase.from("environmental_measurements").delete().in("id", round.rowIds);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setEnvironmentalMeasurementsData(environmentalMeasurements.filter((r) => r.id !== id));
+  };
+
   const addTrainingRequirement = async (r) => {
     const { error } = await supabase.from("training_requirements").insert({
       organization_id: currentUser.organizationId,
