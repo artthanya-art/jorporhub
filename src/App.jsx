@@ -1098,6 +1098,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
   });
   const [newInjured, setNewInjured] = useState({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
   const positionOf = (id) => employees.find((e) => e.id === id)?.position ?? "-";
+  const departmentOf = (id) => employees.find((e) => e.id === id)?.department ?? "-";
   const nameOfEmp = (id) => employees.find((e) => e.id === id)?.name ?? "-";
 
   const addInjuredToForm = () => {
@@ -1299,8 +1300,8 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
                 {form.injuredEmployees.map((e) => (
                   <div key={e.tempId} className="px-3 py-2 flex items-center justify-between gap-2 text-sm">
                     <div>
-                      <span className="font-medium">{nameOfEmp(e.employeeId)}</span>
-                      <span className="text-slate-400"> · {positionOf(e.employeeId)}</span>
+                      <span className="font-bold text-base text-slate-900">{nameOfEmp(e.employeeId)}</span>
+                      <span className="text-slate-400"> · {positionOf(e.employeeId)} · {departmentOf(e.employeeId)}</span>
                       <div className="text-xs text-slate-500">
                         {e.bodyPart !== "-" && <>ส่วนที่บาดเจ็บ: {e.bodyPart} · </>}
                         {e.injuryType !== "-" && <>{e.injuryType} · </>}
@@ -1327,7 +1328,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
                     {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
                   {newInjured.employeeId && (
-                    <p className="text-xs text-slate-400 mt-1">ตำแหน่งงาน: {positionOf(newInjured.employeeId)}</p>
+                    <p className="text-xs text-slate-400 mt-1">ตำแหน่งงาน: {positionOf(newInjured.employeeId)} · แผนก: {departmentOf(newInjured.employeeId)}</p>
                   )}
                 </div>
                 <div>
@@ -1507,6 +1508,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
 
   const nameOf = (id) => employees.find((e) => e.id === id)?.name ?? "-";
   const positionOf = (id) => employees.find((e) => e.id === id)?.position ?? "-";
+  const departmentOf = (id) => employees.find((e) => e.id === id)?.department ?? "-";
 
   const saveEdit = () => {
     onUpdate(incident.id, {
@@ -1708,6 +1710,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               <tr className="bg-slate-50 text-slate-500 text-left">
                 <th className="px-4 py-2.5 font-bold">พนักงาน</th>
                 <th className="px-4 py-2.5 font-bold">ตำแหน่งงาน</th>
+                <th className="px-4 py-2.5 font-bold">แผนก</th>
                 <th className="px-4 py-2.5 font-bold">ส่วนของร่างกายที่บาดเจ็บ</th>
                 <th className="px-4 py-2.5 font-bold">ลักษณะการบาดเจ็บ</th>
                 <th className="px-4 py-2.5 font-bold">จำนวนวันหยุดงาน</th>
@@ -1717,8 +1720,9 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
             <tbody>
               {incident.injuredEmployees.map((e) => (
                 <tr key={e.rowId} className="border-t border-slate-100">
-                  <td className="px-4 py-2.5">{nameOf(e.employeeId)}</td>
+                  <td className="px-4 py-2.5 font-bold text-slate-900">{nameOf(e.employeeId)}</td>
                   <td className="px-4 py-2.5 text-slate-500">{positionOf(e.employeeId)}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{departmentOf(e.employeeId)}</td>
                   <td className="px-4 py-2.5">
                     <input
                       value={e.bodyPart === "-" ? "" : e.bodyPart || ""}
@@ -1755,7 +1759,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               ))}
               {incident.injuredEmployees.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-3 text-sm text-slate-400">ไม่มีพนักงานได้รับบาดเจ็บที่บันทึกไว้</td>
+                  <td colSpan={7} className="px-4 py-3 text-sm text-slate-400">ไม่มีพนักงานได้รับบาดเจ็บที่บันทึกไว้</td>
                 </tr>
               )}
             </tbody>
@@ -1775,7 +1779,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                   {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                 </select>
                 {newInjured.employeeId && (
-                  <p className="text-xs text-slate-400 mt-1">ตำแหน่งงาน: {positionOf(newInjured.employeeId)}</p>
+                  <p className="text-xs text-slate-400 mt-1">ตำแหน่งงาน: {positionOf(newInjured.employeeId)} · แผนก: {departmentOf(newInjured.employeeId)}</p>
                 )}
               </div>
               <div>
