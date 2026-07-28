@@ -196,7 +196,7 @@ function toEmployeeRow(emp, organizationId) {
 // รวมข้อมูล 3 ตาราง (work_locations + work_location_hazards + location_risk_assessments
 // รอบล่าสุด) ให้เป็น object เดียวที่หน้าจอใช้งานอยู่แล้ว — assessorName ใช้ currentUser.name
 // ตรงๆ แทนการ join ไปตาราง users เพราะตอนนี้ 1 บริษัท = 1 ผู้ใช้เท่านั้น
-function mapLocationRow(loc, hazardRows, latestAssessment, assessorName) {
+function mapLocationRow(loc, hazardRows, latestAssessment, assessorName, ppeRows) {
   return {
     id: loc.id,
     name: loc.name,
@@ -204,6 +204,7 @@ function mapLocationRow(loc, hazardRows, latestAssessment, assessorName) {
     description: loc.description || "-",
     riskLevel: loc.risk_level,
     hazards: (hazardRows || []).map((h) => h.hazard_type),
+    ppeRequired: (ppeRows || []).map((p) => p.ppe_type),
     riskAssessment: latestAssessment
       ? {
           riskLevel: latestAssessment.risk_level,
@@ -436,6 +437,29 @@ const hazardTypeLabel = {
   radiation: "รังสี",
   other: "อื่นๆ",
 };
+
+// รายการประเภท PPE มาตรฐาน — ใช้ทั้งเป็นตัวเลือกตอนเพิ่มประเภท/รุ่นอุปกรณ์ในคลัง PPE
+// และเป็นตัวเลือก "PPE ที่ต้องใส่" ต่อสถานที่ทำงาน
+const ppeTypeLabel = {
+  hard_hat: "หมวกนิรภัย",
+  safety_glasses: "แว่นตานิรภัย",
+  face_shield: "กระบังหน้า",
+  welding_mask: "หน้ากากเชื่อม",
+  ear_plugs: "ปลั๊กอุดหู",
+  ear_muffs: "ที่ครอบหู",
+  dust_mask: "หน้ากากกรองฝุ่น",
+  chemical_mask: "หน้ากากกรองสารเคมี",
+  scba: "ชุดส่งอากาศ (SCBA)",
+  chemical_gloves: "ถุงมือกันสารเคมี",
+  electrical_gloves: "ถุงมือกันไฟฟ้า",
+  cut_resistant_gloves: "ถุงมือกันบาด",
+  leather_gloves: "ถุงมือหนัง",
+  safety_shoes: "รองเท้านิรภัย",
+  safety_boots: "รองเท้าบูทเซฟตี้",
+  full_body_harness: "เข็มขัดนิรภัยเต็มตัว",
+  fall_arrest_lanyard: "เชือกกันตก",
+};
+const ppeTypeOptions = Object.keys(ppeTypeLabel);
 
 const riskLevelLabel = { low: "ต่ำ", medium: "ปานกลาง", high: "สูง", critical: "วิกฤต" };
 
@@ -2010,7 +2034,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
 
 function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem }) {
   const [showCatalogForm, setShowCatalogForm] = useState(false);
-  const [catalogForm, setCatalogForm] = useState({ name: "", model: "", standard: "", lifespanDays: "180" });
+  const [catalogForm, setCatalogForm] = useState({ name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180" });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ model: "", standard: "", lifespanDays: "" });
 
@@ -2023,7 +2047,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
       standard: catalogForm.standard || "-",
       lifespanDays: Number(catalogForm.lifespanDays) || 180,
     });
-    setCatalogForm({ name: "", model: "", standard: "", lifespanDays: "180" });
+    setCatalogForm({ name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180" });
     setShowCatalogForm(false);
   };
 
@@ -2058,12 +2082,13 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-500 block mb-1">ชื่อประเภทอุปกรณ์</label>
-              <input
+              <select
                 value={catalogForm.name}
                 onChange={(e) => setCatalogForm({ ...catalogForm, name: e.target.value })}
-                placeholder="เช่น ที่อุดหูลดเสียง"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              />
+              >
+                {ppeTypeOptions.map((p) => <option key={p} value={ppeTypeLabel[p]}>{ppeTypeLabel[p]}</option>)}
+              </select>
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">ชื่อรุ่น</label>
@@ -3697,6 +3722,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
     controlMeasures: location.riskAssessment.controlMeasures,
     nextDue: location.riskAssessment.nextDue,
     hazards: location.hazards,
+    ppeRequired: location.ppeRequired,
   });
 
   const handlePhotoChange = (e) => {
@@ -3728,6 +3754,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
       controlMeasures: location.riskAssessment.controlMeasures,
       nextDue: location.riskAssessment.nextDue,
       hazards: location.hazards,
+      ppeRequired: location.ppeRequired,
     });
     setEditingAssessment(true);
   };
@@ -3739,10 +3766,18 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
     });
   };
 
+  const toggleFormPpe = (p) => {
+    setForm({
+      ...form,
+      ppeRequired: form.ppeRequired.includes(p) ? form.ppeRequired.filter((x) => x !== p) : [...form.ppeRequired, p],
+    });
+  };
+
   const saveEdit = () => {
     if (!form.nextDue) return;
     onUpdate(location.id, {
       hazards: form.hazards,
+      ppeRequired: form.ppeRequired,
       riskLevel: form.riskLevel,
       riskAssessment: {
         riskLevel: form.riskLevel,
@@ -3839,6 +3874,18 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                   )}
                 </div>
               </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-1.5">ประเภท PPE ที่ต้องใส่</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {location.ppeRequired.length === 0 ? (
+                    <span className="text-sm text-slate-400">ไม่ได้ระบุ</span>
+                  ) : (
+                    location.ppeRequired.map((p) => (
+                      <span key={p} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{ppeTypeLabel[p]}</span>
+                    ))
+                  )}
+                </div>
+              </div>
               <div className="flex items-center justify-between pt-1">
                 <span className="text-sm text-slate-500">ระดับความเสี่ยง</span>
                 <Badge tone={riskLevelTone(location.riskAssessment.riskLevel)}>{riskLevelLabel[location.riskAssessment.riskLevel]}</Badge>
@@ -3861,6 +3908,22 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                       }`}
                     >
                       {hazardTypeLabel[h]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">ประเภท PPE ที่ต้องใส่</label>
+                <div className="flex flex-wrap gap-2">
+                  {ppeTypeOptions.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => toggleFormPpe(p)}
+                      className={`text-xs px-3 py-1.5 rounded-lg border ${
+                        form.ppeRequired.includes(p) ? "bg-blue-700 text-white border-blue-700" : "border-slate-300 text-slate-500"
+                      }`}
+                    >
+                      {ppeTypeLabel[p]}
                     </button>
                   ))}
                 </div>
@@ -4021,7 +4084,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
 function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, onDelete, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", building: "", description: "", riskLevel: "low", hazards: [] });
+  const [form, setForm] = useState({ name: "", building: "", description: "", riskLevel: "low", hazards: [], ppeRequired: [] });
 
   const selected = locations.find((l) => l.id === selectedId);
   if (selected) {
@@ -4046,6 +4109,13 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
     });
   };
 
+  const toggleFormPpe = (p) => {
+    setForm({
+      ...form,
+      ppeRequired: form.ppeRequired.includes(p) ? form.ppeRequired.filter((x) => x !== p) : [...form.ppeRequired, p],
+    });
+  };
+
   const submit = () => {
     if (!form.name.trim()) return;
     onAdd({
@@ -4055,12 +4125,13 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
       description: form.description || "-",
       riskLevel: form.riskLevel,
       hazards: form.hazards,
+      ppeRequired: form.ppeRequired,
       riskAssessment: {
         riskLevel: form.riskLevel, findings: "-", controlMeasures: "-", nextDue: "",
         updatedAt: new Date().toISOString(), updatedBy: "ผู้ใช้งานปัจจุบัน",
       },
     });
-    setForm({ name: "", building: "", description: "", riskLevel: "low", hazards: [] });
+    setForm({ name: "", building: "", description: "", riskLevel: "low", hazards: [], ppeRequired: [] });
     setShowForm(false);
   };
 
@@ -4146,6 +4217,22 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
               ))}
             </div>
           </div>
+          <div className="mb-4">
+            <label className="text-xs text-slate-500 block mb-1">ประเภท PPE ที่ต้องใส่</label>
+            <div className="flex flex-wrap gap-2">
+              {ppeTypeOptions.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => toggleFormPpe(p)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border ${
+                    form.ppeRequired.includes(p) ? "bg-blue-700 text-white border-blue-700" : "border-slate-300 text-slate-500"
+                  }`}
+                >
+                  {ppeTypeLabel[p]}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
               ยกเลิก
@@ -4165,6 +4252,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
               <th className="px-4 py-2.5 font-medium">ชื่อสถานที่</th>
               <th className="px-4 py-2.5 font-medium">อาคาร/โซน</th>
               <th className="px-4 py-2.5 font-medium">รูปแบบความเสี่ยง</th>
+              <th className="px-4 py-2.5 font-medium">PPE ที่ต้องใส่</th>
               <th className="px-4 py-2.5 font-medium">ระดับความเสี่ยง</th>
               <th className="px-4 py-2.5 font-medium">ผลตรวจวัดสิ่งแวดล้อม</th>
               <th className="px-4 py-2.5"></th>
@@ -4187,6 +4275,13 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
                     <div className="flex flex-wrap gap-1">
                       {l.hazards.map((h) => (
                         <span key={h} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{hazardTypeLabel[h]}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex flex-wrap gap-1">
+                      {l.ppeRequired.map((p) => (
+                        <span key={p} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{ppeTypeLabel[p]}</span>
                       ))}
                     </div>
                   </td>
@@ -5297,6 +5392,7 @@ export default function JorPorPrototype() {
     const locationIds = (locs || []).map((l) => l.id);
     let hazardsByLocation = {};
     let latestAssessmentByLocation = {};
+    let ppeByLocation = {};
 
     if (locationIds.length > 0) {
       const { data: hazardRows } = await supabase
@@ -5306,6 +5402,15 @@ export default function JorPorPrototype() {
       (hazardRows || []).forEach((h) => {
         if (!hazardsByLocation[h.location_id]) hazardsByLocation[h.location_id] = [];
         hazardsByLocation[h.location_id].push(h);
+      });
+
+      const { data: ppeRows } = await supabase
+        .from("location_ppe_requirements")
+        .select("location_id, ppe_type")
+        .in("location_id", locationIds);
+      (ppeRows || []).forEach((p) => {
+        if (!ppeByLocation[p.location_id]) ppeByLocation[p.location_id] = [];
+        ppeByLocation[p.location_id].push(p);
       });
 
       const { data: assessmentRows } = await supabase
@@ -5321,7 +5426,7 @@ export default function JorPorPrototype() {
 
     setLocationsData(
       (locs || []).map((l) =>
-        mapLocationRow(l, hazardsByLocation[l.id], latestAssessmentByLocation[l.id], currentUser?.name)
+        mapLocationRow(l, hazardsByLocation[l.id], latestAssessmentByLocation[l.id], currentUser?.name, ppeByLocation[l.id])
       )
     );
     setLocationsLoading(false);
@@ -6013,6 +6118,11 @@ export default function JorPorPrototype() {
         loc.hazards.map((h) => ({ location_id: newLoc.id, hazard_type: h }))
       );
     }
+    if (loc.ppeRequired?.length) {
+      await supabase.from("location_ppe_requirements").insert(
+        loc.ppeRequired.map((p) => ({ location_id: newLoc.id, ppe_type: p }))
+      );
+    }
     if (loc.riskAssessment) {
       await supabase.from("location_risk_assessments").insert({
         organization_id: currentUser.organizationId,
@@ -6205,6 +6315,15 @@ export default function JorPorPrototype() {
       if (fields.hazards.length > 0) {
         await supabase.from("work_location_hazards").insert(
           fields.hazards.map((h) => ({ location_id: id, hazard_type: h }))
+        );
+      }
+    }
+
+    if (fields.ppeRequired !== undefined) {
+      await supabase.from("location_ppe_requirements").delete().eq("location_id", id);
+      if (fields.ppeRequired.length > 0) {
+        await supabase.from("location_ppe_requirements").insert(
+          fields.ppeRequired.map((p) => ({ location_id: id, ppe_type: p }))
         );
       }
     }
