@@ -66,13 +66,20 @@ function mapIncidentRow(row, injuredRows, updateRows, updatedByNameById) {
     type: row.injury_type || "-",
     severity: severityDbToUi[row.severity] || row.severity,
     incidentDate: row.incident_date ? row.incident_date.slice(0, 10) : "",
+    incidentTime: row.incident_time ? row.incident_time.slice(0, 5) : "",
+    department: row.department || "-",
     status: incidentStatusDbToUi[row.status] || row.status,
     description: row.description || "-",
+    firstAidGiven: row.first_aid_given || "-",
+    probableCause: row.probable_cause || "-",
+    reporterName: row.reporter_name || "-",
+    reporterPhone: row.reporter_phone || "-",
     injuredEmployees: (injuredRows || []).map((e) => ({
       rowId: e.id,
       employeeId: e.employee_id,
       lostWorkdays: e.lost_workdays,
       injuryType: e.injury_description || "-",
+      bodyPart: e.body_part || "-",
     })),
     updates: (updateRows || []).map((u) => ({
       rowId: u.id,
@@ -1085,7 +1092,8 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
   const [locationMode, setLocationMode] = useState("select"); // "select" | "custom"
   const [form, setForm] = useState({
     location: "", type: "หกล้ม", severity: "ปานกลาง", description: "",
-    incidentDate: todayIso(),
+    incidentDate: todayIso(), incidentTime: "", department: "",
+    firstAidGiven: "", probableCause: "", reporterName: "", reporterPhone: "",
   });
 
   const autoLatestIncidentDate = incidents.length
@@ -1100,12 +1108,22 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
       type: form.type,
       severity: form.severity,
       incidentDate: form.incidentDate,
+      incidentTime: form.incidentTime,
+      department: form.department || "-",
       status: "รายงานแล้ว",
       injuredEmployees: [],
       description: form.description || "-",
+      firstAidGiven: form.firstAidGiven || "-",
+      probableCause: form.probableCause || "-",
+      reporterName: form.reporterName || "-",
+      reporterPhone: form.reporterPhone || "-",
       updates: [],
     });
-    setForm({ location: "", type: "หกล้ม", severity: "ปานกลาง", description: "", incidentDate: todayIso() });
+    setForm({
+      location: "", type: "หกล้ม", severity: "ปานกลาง", description: "",
+      incidentDate: todayIso(), incidentTime: "", department: "",
+      firstAidGiven: "", probableCause: "", reporterName: "", reporterPhone: "",
+    });
     setShowForm(false);
   };
 
@@ -1156,7 +1174,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">สถานที่</label>
+              <label className="text-xs text-slate-500 block mb-1">สถานที่เกิดเหตุ (จุดที่ชัดเจน)</label>
               <select
                 value={locationMode === "custom" ? "__custom__" : form.location}
                 onChange={(e) => {
@@ -1197,15 +1215,35 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               </select>
             </div>
           </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">
+                วันที่เกิดเหตุ <span className="text-slate-400">(ค่าเริ่มต้นคือวันนี้ แก้ไขได้กรณีรายงานย้อนหลัง)</span>
+              </label>
+              <input
+                type="date"
+                value={form.incidentDate}
+                onChange={(e) => setForm({ ...form, incidentDate: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">เวลาโดยประมาณ</label>
+              <input
+                type="time"
+                value={form.incidentTime}
+                onChange={(e) => setForm({ ...form, incidentTime: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
           <div className="mb-3">
-            <label className="text-xs text-slate-500 block mb-1">
-              วันที่เกิดเหตุ <span className="text-slate-400">(ค่าเริ่มต้นคือวันนี้ แก้ไขได้กรณีรายงานย้อนหลัง)</span>
-            </label>
+            <label className="text-xs text-slate-500 block mb-1">แผนก/หน่วยงาน</label>
             <input
-              type="date"
-              value={form.incidentDate}
-              onChange={(e) => setForm({ ...form, incidentDate: e.target.value })}
-              className="w-full sm:w-56 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              value={form.department}
+              onChange={(e) => setForm({ ...form, department: e.target.value })}
+              placeholder="เช่น แผนกผลิต 2"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
             />
           </div>
           <div className="mb-3">
@@ -1224,11 +1262,11 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               ))}
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              เพิ่มพนักงานที่ได้รับบาดเจ็บและจำนวนวันหยุดงานได้ที่หน้ารายละเอียดหลังบันทึกรายงานนี้
+              เพิ่มชื่อพนักงานที่ได้รับบาดเจ็บ ตำแหน่งงาน ส่วนของร่างกายที่บาดเจ็บ และจำนวนวันหยุดงานได้ที่หน้ารายละเอียดหลังบันทึกรายงานนี้
             </p>
           </div>
-          <div className="mb-4">
-            <label className="text-xs text-slate-500 block mb-1">รายละเอียดเหตุการณ์</label>
+          <div className="mb-3">
+            <label className="text-xs text-slate-500 block mb-1">เหตุการณ์ที่เกิดขึ้น (บรรยายสั้นๆ ว่าเกิดอะไรขึ้น)</label>
             <textarea
               rows={3}
               value={form.description}
@@ -1236,6 +1274,46 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               placeholder="อธิบายสิ่งที่เกิดขึ้นตามลำดับเวลา"
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
             />
+          </div>
+          <div className="mb-3">
+            <label className="text-xs text-slate-500 block mb-1">การปฐมพยาบาลเบื้องต้นที่ทำไปแล้ว</label>
+            <textarea
+              rows={2}
+              value={form.firstAidGiven}
+              onChange={(e) => setForm({ ...form, firstAidGiven: e.target.value })}
+              placeholder="เช่น ล้างแผลด้วยน้ำสะอาด พันผ้าก๊อซ"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
+            />
+          </div>
+          <div className="mb-3">
+            <label className="text-xs text-slate-500 block mb-1">สาเหตุเบื้องต้นที่คาดว่าเป็นไปได้</label>
+            <textarea
+              rows={2}
+              value={form.probableCause}
+              onChange={(e) => setForm({ ...form, probableCause: e.target.value })}
+              placeholder="เช่น พื้นเปียกลื่น ไม่มีป้ายเตือน"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
+            />
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">ชื่อผู้แจ้ง (หัวหน้างาน)</label>
+              <input
+                value={form.reporterName}
+                onChange={(e) => setForm({ ...form, reporterName: e.target.value })}
+                placeholder="ชื่อ-นามสกุล"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">เบอร์ติดต่อกลับ</label>
+              <input
+                value={form.reporterPhone}
+                onChange={(e) => setForm({ ...form, reporterPhone: e.target.value })}
+                placeholder="เช่น 08x-xxx-xxxx"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
@@ -1307,12 +1385,19 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
     severity: incident.severity,
     description: incident.description,
     status: incident.status,
+    incidentTime: incident.incidentTime,
+    department: incident.department === "-" ? "" : incident.department,
+    firstAidGiven: incident.firstAidGiven === "-" ? "" : incident.firstAidGiven,
+    probableCause: incident.probableCause === "-" ? "" : incident.probableCause,
+    reporterName: incident.reporterName === "-" ? "" : incident.reporterName,
+    reporterPhone: incident.reporterPhone === "-" ? "" : incident.reporterPhone,
   });
   const [progressNote, setProgressNote] = useState("");
   const [progressStatus, setProgressStatus] = useState("");
-  const [newInjured, setNewInjured] = useState({ employeeId: "", lostWorkdays: "0", injuryType: "" });
+  const [newInjured, setNewInjured] = useState({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
 
   const nameOf = (id) => employees.find((e) => e.id === id)?.name ?? "-";
+  const positionOf = (id) => employees.find((e) => e.id === id)?.position ?? "-";
 
   const saveEdit = () => {
     onUpdate(incident.id, {
@@ -1320,6 +1405,12 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
       severity: edit.severity,
       description: edit.description,
       status: edit.status,
+      incidentTime: edit.incidentTime,
+      department: edit.department || "-",
+      firstAidGiven: edit.firstAidGiven || "-",
+      probableCause: edit.probableCause || "-",
+      reporterName: edit.reporterName || "-",
+      reporterPhone: edit.reporterPhone || "-",
     });
     setEditing(false);
   };
@@ -1340,8 +1431,9 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
       employeeId: newInjured.employeeId,
       lostWorkdays: Number(newInjured.lostWorkdays) || 0,
       injuryType: newInjured.injuryType || "-",
+      bodyPart: newInjured.bodyPart || "-",
     });
-    setNewInjured({ employeeId: "", lostWorkdays: "0", injuryType: "" });
+    setNewInjured({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
   };
 
   const updateInjuredField = (rowId, field, value) => {
@@ -1362,7 +1454,9 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
         <div>
           <h1 className="text-lg font-semibold text-slate-900">{incident.location} · {incident.type}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {formatThaiDate(incident.incidentDate)} · ความรุนแรง {incident.severity}
+            {formatThaiDate(incident.incidentDate)}
+            {incident.incidentTime ? ` ${incident.incidentTime} น.` : ""} · ความรุนแรง {incident.severity}
+            {incident.department !== "-" ? ` · ${incident.department}` : ""}
           </p>
         </div>
         <Badge tone={statusTone(incident.status)}>{incident.status}</Badge>
@@ -1379,7 +1473,15 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
         </div>
 
         {!editing ? (
-          <p className="text-sm text-slate-700 whitespace-pre-wrap">{incident.description}</p>
+          <div className="space-y-3 text-sm">
+            <p className="text-slate-700 whitespace-pre-wrap">{incident.description}</p>
+            <div className="grid sm:grid-cols-2 gap-x-4 gap-y-2 pt-2 border-t border-slate-100">
+              <p><span className="text-slate-500">การปฐมพยาบาลเบื้องต้น:</span> {incident.firstAidGiven}</p>
+              <p><span className="text-slate-500">สาเหตุเบื้องต้นที่คาดว่าเป็นไปได้:</span> {incident.probableCause}</p>
+              <p><span className="text-slate-500">ชื่อผู้แจ้ง:</span> {incident.reporterName}</p>
+              <p><span className="text-slate-500">เบอร์ติดต่อกลับ:</span> {incident.reporterPhone}</p>
+            </div>
+          </div>
         ) : (
           <div className="space-y-3">
             <div className="grid sm:grid-cols-2 gap-3">
@@ -1402,6 +1504,25 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                 </select>
               </div>
             </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">เวลาโดยประมาณ</label>
+                <input
+                  type="time"
+                  value={edit.incidentTime}
+                  onChange={(e) => setEdit({ ...edit, incidentTime: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">แผนก/หน่วยงาน</label>
+                <input
+                  value={edit.department}
+                  onChange={(e) => setEdit({ ...edit, department: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">ระดับความรุนแรง</label>
               <select
@@ -1413,13 +1534,49 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">รายละเอียดเหตุการณ์</label>
+              <label className="text-xs text-slate-500 block mb-1">เหตุการณ์ที่เกิดขึ้น</label>
               <textarea
                 rows={3}
                 value={edit.description}
                 onChange={(e) => setEdit({ ...edit, description: e.target.value })}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
               />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">การปฐมพยาบาลเบื้องต้นที่ทำไปแล้ว</label>
+              <textarea
+                rows={2}
+                value={edit.firstAidGiven}
+                onChange={(e) => setEdit({ ...edit, firstAidGiven: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">สาเหตุเบื้องต้นที่คาดว่าเป็นไปได้</label>
+              <textarea
+                rows={2}
+                value={edit.probableCause}
+                onChange={(e) => setEdit({ ...edit, probableCause: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
+              />
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">ชื่อผู้แจ้ง (หัวหน้างาน)</label>
+                <input
+                  value={edit.reporterName}
+                  onChange={(e) => setEdit({ ...edit, reporterName: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">เบอร์ติดต่อกลับ</label>
+                <input
+                  value={edit.reporterPhone}
+                  onChange={(e) => setEdit({ ...edit, reporterPhone: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setEditing(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
@@ -1441,6 +1598,8 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-left">
                 <th className="px-4 py-2.5 font-medium">พนักงาน</th>
+                <th className="px-4 py-2.5 font-medium">ตำแหน่งงาน</th>
+                <th className="px-4 py-2.5 font-medium">ส่วนของร่างกายที่บาดเจ็บ</th>
                 <th className="px-4 py-2.5 font-medium">ลักษณะการบาดเจ็บ</th>
                 <th className="px-4 py-2.5 font-medium">จำนวนวันหยุดงาน</th>
                 <th className="px-4 py-2.5"></th>
@@ -1450,6 +1609,15 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               {incident.injuredEmployees.map((e) => (
                 <tr key={e.rowId} className="border-t border-slate-100">
                   <td className="px-4 py-2.5">{nameOf(e.employeeId)}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{positionOf(e.employeeId)}</td>
+                  <td className="px-4 py-2.5">
+                    <input
+                      value={e.bodyPart === "-" ? "" : e.bodyPart || ""}
+                      onChange={(ev) => updateInjuredField(e.rowId, "bodyPart", ev.target.value)}
+                      placeholder="เช่น มือขวา"
+                      className="w-full min-w-[8rem] border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                    />
+                  </td>
                   <td className="px-4 py-2.5">
                     <input
                       value={e.injuryType || ""}
@@ -1478,7 +1646,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               ))}
               {incident.injuredEmployees.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-3 text-sm text-slate-400">ไม่มีพนักงานได้รับบาดเจ็บที่บันทึกไว้</td>
+                  <td colSpan={6} className="px-4 py-3 text-sm text-slate-400">ไม่มีพนักงานได้รับบาดเจ็บที่บันทึกไว้</td>
                 </tr>
               )}
             </tbody>
@@ -1486,7 +1654,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
           </div>
           <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
             <p className="text-xs font-medium text-slate-600 mb-2">เพิ่มพนักงานที่ได้รับบาดเจ็บ</p>
-            <div className="grid sm:grid-cols-3 gap-2 mb-2">
+            <div className="grid sm:grid-cols-2 gap-2 mb-2">
               <div>
                 <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
                 <select
@@ -1497,7 +1665,21 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                   <option value="">เลือกพนักงาน...</option>
                   {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                 </select>
+                {newInjured.employeeId && (
+                  <p className="text-xs text-slate-400 mt-1">ตำแหน่งงาน: {positionOf(newInjured.employeeId)}</p>
+                )}
               </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">ส่วนของร่างกายที่บาดเจ็บ</label>
+                <input
+                  value={newInjured.bodyPart}
+                  onChange={(e) => setNewInjured({ ...newInjured, bodyPart: e.target.value })}
+                  placeholder="เช่น มือขวา"
+                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                />
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2 mb-2">
               <div>
                 <label className="text-xs text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
                 <input
@@ -5485,7 +5667,7 @@ export default function JorPorPrototype() {
     setIncidentsLoading(true);
     const { data: incidentRows, error } = await supabase
       .from("incidents")
-      .select("id, location, injury_type, severity, incident_date, status, description")
+      .select("id, location, injury_type, severity, incident_date, incident_time, department, status, description, first_aid_given, probable_cause, reporter_name, reporter_phone")
       .order("incident_date", { ascending: false });
     if (error) {
       console.error("fetchIncidents error:", error);
@@ -5500,7 +5682,7 @@ export default function JorPorPrototype() {
     if (incidentIds.length > 0) {
       const { data: injuredRows } = await supabase
         .from("incident_injured_employees")
-        .select("id, incident_id, employee_id, lost_workdays, injury_description")
+        .select("id, incident_id, employee_id, lost_workdays, injury_description, body_part")
         .in("incident_id", incidentIds);
       (injuredRows || []).forEach((e) => {
         if (!injuredByIncident[e.incident_id]) injuredByIncident[e.incident_id] = [];
@@ -5542,8 +5724,14 @@ export default function JorPorPrototype() {
         injury_type: inc.type,
         severity: severityUiToDb[inc.severity] || "minor",
         incident_date: inc.incidentDate,
+        incident_time: inc.incidentTime || null,
+        department: inc.department === "-" ? null : inc.department,
         status: "reported",
         description: inc.description,
+        first_aid_given: inc.firstAidGiven === "-" ? null : inc.firstAidGiven,
+        probable_cause: inc.probableCause === "-" ? null : inc.probableCause,
+        reporter_name: inc.reporterName === "-" ? null : inc.reporterName,
+        reporter_phone: inc.reporterPhone === "-" ? null : inc.reporterPhone,
       })
       .select()
       .single();
@@ -5560,6 +5748,12 @@ export default function JorPorPrototype() {
     if (fields.severity !== undefined) payload.severity = severityUiToDb[fields.severity] || fields.severity;
     if (fields.description !== undefined) payload.description = fields.description;
     if (fields.status !== undefined) payload.status = incidentStatusUiToDb[fields.status] || fields.status;
+    if (fields.incidentTime !== undefined) payload.incident_time = fields.incidentTime || null;
+    if (fields.department !== undefined) payload.department = fields.department === "-" ? null : fields.department;
+    if (fields.firstAidGiven !== undefined) payload.first_aid_given = fields.firstAidGiven === "-" ? null : fields.firstAidGiven;
+    if (fields.probableCause !== undefined) payload.probable_cause = fields.probableCause === "-" ? null : fields.probableCause;
+    if (fields.reporterName !== undefined) payload.reporter_name = fields.reporterName === "-" ? null : fields.reporterName;
+    if (fields.reporterPhone !== undefined) payload.reporter_phone = fields.reporterPhone === "-" ? null : fields.reporterPhone;
     const { error } = await supabase.from("incidents").update(payload).eq("id", incidentId);
     if (error) {
       alert("บันทึกการแก้ไขไม่สำเร็จ: " + error.message);
@@ -5621,6 +5815,7 @@ export default function JorPorPrototype() {
         employee_id: entry.employeeId,
         lost_workdays: entry.lostWorkdays,
         injury_description: entry.injuryType,
+        body_part: entry.bodyPart === "-" ? null : entry.bodyPart,
       })
       .select()
       .single();
@@ -5635,7 +5830,7 @@ export default function JorPorPrototype() {
               ...inc,
               injuredEmployees: [
                 ...inc.injuredEmployees,
-                { rowId: data.id, employeeId: data.employee_id, lostWorkdays: data.lost_workdays, injuryType: data.injury_description || "-" },
+                { rowId: data.id, employeeId: data.employee_id, lostWorkdays: data.lost_workdays, injuryType: data.injury_description || "-", bodyPart: data.body_part || "-" },
               ],
             }
           : inc
@@ -5644,7 +5839,10 @@ export default function JorPorPrototype() {
   };
 
   const updateInjuredEmployee = async (incidentId, rowId, field, value) => {
-    const payload = field === "lostWorkdays" ? { lost_workdays: value } : { injury_description: value };
+    const payload =
+      field === "lostWorkdays" ? { lost_workdays: value } :
+      field === "bodyPart" ? { body_part: value } :
+      { injury_description: value };
     const { error } = await supabase.from("incident_injured_employees").update(payload).eq("id", rowId);
     if (error) {
       alert("บันทึกไม่สำเร็จ: " + error.message);
