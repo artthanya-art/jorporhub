@@ -228,6 +228,24 @@ function mapCourseRow(row) {
 }
 
 // ---------------------------------------------------------------
+// การกระทำที่ไม่ปลอดภัย / ไม่สวมใส่ PPE (ppe_noncompliance_records) <-> Supabase mapping
+// ---------------------------------------------------------------
+const noncomplianceActionUiToDb = { "เตือนวาจา": "verbal_warning", "ออกใบเตือน": "written_warning", "ให้หยุดงาน": "work_stopped" };
+const noncomplianceActionDbToUi = Object.fromEntries(Object.entries(noncomplianceActionUiToDb).map(([k, v]) => [v, k]));
+
+function mapNoncomplianceRow(row) {
+  return {
+    id: row.id,
+    employeeId: row.employee_id,
+    ppeName: row.ppe_name || "-",
+    location: row.location || "-",
+    date: row.observed_at ? row.observed_at.slice(0, 10) : "",
+    action: noncomplianceActionDbToUi[row.action_taken] || row.action_taken,
+    notes: row.notes || "-",
+  };
+}
+
+// ---------------------------------------------------------------
 // ตรวจวัดสิ่งแวดล้อม (environmental_measurements) <-> Supabase mapping
 // ตารางเก็บ 1 แถว = 1 จุดตรวจวัด แต่หน้าจอต้องการ "1 รอบตรวจวัด" ที่รวมหลายจุดย่อยไว้ด้วยกัน
 // จึง group แถวที่มี location_id + measurement_type + measured_at ตรงกันทุกแถวเป็นก้อนเดียว
@@ -1647,13 +1665,21 @@ function PpeByItemView({ employees, ppe }) {
 
 function NoncomplianceView({ employees, records, onAdd, onDelete }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ employeeId: employees[0]?.id, ppeName: "", location: "", date: todayIso(), action: "เตือนวาจา", notes: "" });
+  const [form, setForm] = useState({ employeeId: employees[0]?.id ?? "", ppeName: "", location: "", date: todayIso(), action: "เตือนวาจา", notes: "" });
   const nameOf = (id) => employees.find((e) => e.id === id)?.name ?? "-";
 
+  // employees มาจาก Supabase (โหลดแบบ async) — ถ้าคอมโพเนนต์นี้ mount ก่อนโหลดเสร็จ ค่าเริ่มต้น
+  // จะติดอยู่ที่ "" ตลอดไปถ้าไม่ sync ใหม่ตอนข้อมูลมาถึงจริง (ดูคำอธิบายเดียวกันใน PpeIssuanceView)
+  useEffect(() => {
+    if (!form.employeeId && employees.length > 0) {
+      setForm((f) => ({ ...f, employeeId: employees[0].id }));
+    }
+  }, [employees]);
+
   const submit = () => {
-    if (!form.ppeName.trim() || !form.location.trim()) return;
-    onAdd({ id: Date.now(), ...form });
-    setForm({ employeeId: employees[0]?.id, ppeName: "", location: "", date: todayIso(), action: "เตือนวาจา", notes: "" });
+    if (!form.employeeId || !form.ppeName.trim() || !form.location.trim()) return;
+    onAdd({ ...form });
+    setForm({ employeeId: employees[0]?.id ?? "", ppeName: "", location: "", date: todayIso(), action: "เตือนวาจา", notes: "" });
     setShowForm(false);
   };
 
@@ -1683,9 +1709,10 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
               <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
               <select
                 value={form.employeeId}
-                onChange={(e) => setForm({ ...form, employeeId: Number(e.target.value) })}
+                onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
               >
+                <option value="">-- เลือกพนักงาน --</option>
                 {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </div>
@@ -1745,7 +1772,11 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
             <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
               ยกเลิก
             </button>
-            <button onClick={submit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
+            <button
+              onClick={submit}
+              disabled={!form.employeeId}
+              className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               บันทึก
             </button>
           </div>
@@ -5220,6 +5251,8 @@ export default function JorPorPrototype() {
   const [equipmentLoading, setEquipmentLoading] = useState(false);
   const [environmentalMeasurements, setEnvironmentalMeasurementsData] = useState([]);
   const [environmentalLoading, setEnvironmentalLoading] = useState(false);
+  const [noncompliance, setNoncomplianceData] = useState([]);
+  const [noncomplianceLoading, setNoncomplianceLoading] = useState(false);
 
   // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
   // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
@@ -5657,6 +5690,7 @@ export default function JorPorPrototype() {
       fetchPpe();
       fetchEquipment();
       fetchEnvironmentalMeasurements();
+      fetchNoncompliance();
     }
   }, [currentUser?.id]);
 
@@ -5846,16 +5880,58 @@ export default function JorPorPrototype() {
   const tenant = tenantStore[currentUser.id] || createEmptyTenantData();
   const updateTenant = (patch) => setTenantStore({ ...tenantStore, [currentUser.id]: { ...tenant, ...patch } });
 
-  const noncompliance = tenant.noncompliance;
-  const setNoncompliance = (val) => updateTenant({ noncompliance: val });
   const ltiBaselineDate = tenant.ltiBaselineDate;
   const setLtiBaselineDate = (val) => updateTenant({ ltiBaselineDate: val });
 
   // ข้อจำกัดจำนวนพนักงานตามประเภทผู้ใช้งาน (เช่น Free บันทึกได้ไม่เกิน 5 คน)
   const employeeLimit = tierLimits[currentUser.userType]?.maxEmployees ?? null;
 
-  const addNoncompliance = (record) => setNoncompliance([record, ...noncompliance]);
-  const deleteNoncompliance = (id) => setNoncompliance(noncompliance.filter((r) => r.id !== id));
+  async function fetchNoncompliance() {
+    setNoncomplianceLoading(true);
+    const { data, error } = await supabase
+      .from("ppe_noncompliance_records")
+      .select("id, employee_id, ppe_name, location, observed_at, action_taken, notes")
+      .order("observed_at", { ascending: false });
+    if (error) {
+      console.error("fetchNoncompliance error:", error);
+      setNoncomplianceLoading(false);
+      return;
+    }
+    setNoncomplianceData((data || []).map(mapNoncomplianceRow));
+    setNoncomplianceLoading(false);
+  }
+
+  const addNoncompliance = async (record) => {
+    const { data, error } = await supabase
+      .from("ppe_noncompliance_records")
+      .insert({
+        organization_id: currentUser.organizationId,
+        employee_id: record.employeeId,
+        ppe_name: record.ppeName,
+        observed_by: currentUser.id,
+        location: record.location,
+        observed_at: record.date,
+        action_taken: noncomplianceActionUiToDb[record.action] || "other",
+        notes: record.notes === "-" ? null : record.notes,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setNoncomplianceData([mapNoncomplianceRow(data), ...noncompliance]);
+  };
+
+  const deleteNoncompliance = async (id) => {
+    const { error } = await supabase.from("ppe_noncompliance_records").delete().eq("id", id);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setNoncomplianceData(noncompliance.filter((r) => r.id !== id));
+  };
+
   const addEmployee = async (emp) => {
     const { error } = await supabase.from("employees").insert(toEmployeeRow(emp, currentUser.organizationId));
     if (error) {
