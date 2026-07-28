@@ -3774,19 +3774,26 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
   };
 
   const saveEdit = () => {
-    if (!form.nextDue) return;
     onUpdate(location.id, {
       hazards: form.hazards,
       ppeRequired: form.ppeRequired,
       riskLevel: form.riskLevel,
-      riskAssessment: {
-        riskLevel: form.riskLevel,
-        findings: form.findings || "-",
-        controlMeasures: form.controlMeasures || "-",
-        nextDue: form.nextDue,
-        updatedAt: new Date().toISOString(),
-        updatedBy: "ผู้ใช้งานปัจจุบัน",
-      },
+      // บันทึกประวัติการประเมินความเสี่ยงรอบใหม่ก็ต่อเมื่อมีกำหนดรอบถัดไปเท่านั้น (เพราะ
+      // next_assessment_due เป็น NOT NULL ในตาราง) แต่ hazards/ppeRequired/riskLevel ข้างบน
+      // ต้องบันทึกได้เสมอ ไม่ควรถูกกันไว้ด้วยเงื่อนไขนี้เหมือนโค้ดเดิม (นั่นคือสาเหตุที่กดบันทึก
+      // แล้วดูเหมือนไม่มีอะไรเกิดขึ้นเลยถ้ายังไม่เคยกรอกกำหนดรอบถัดไปมาก่อน)
+      ...(form.nextDue
+        ? {
+            riskAssessment: {
+              riskLevel: form.riskLevel,
+              findings: form.findings || "-",
+              controlMeasures: form.controlMeasures || "-",
+              nextDue: form.nextDue,
+              updatedAt: new Date().toISOString(),
+              updatedBy: "ผู้ใช้งานปัจจุบัน",
+            },
+          }
+        : {}),
     });
     setEditingAssessment(false);
   };
@@ -3970,6 +3977,9 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                   onChange={(e) => setForm({ ...form, nextDue: e.target.value })}
                   className="w-full sm:w-56 border border-slate-300 rounded-lg px-3 py-2 text-sm"
                 />
+                <p className="text-xs text-slate-400 mt-1">
+                  ถ้าเว้นว่างไว้ ระบบจะไม่บันทึกรอบประเมินความเสี่ยงใหม่ แต่รูปแบบความเสี่ยงและ PPE ที่ต้องใส่จะบันทึกตามปกติ
+                </p>
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setEditingAssessment(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
@@ -6114,14 +6124,16 @@ export default function JorPorPrototype() {
       return;
     }
     if (loc.hazards?.length) {
-      await supabase.from("work_location_hazards").insert(
+      const { error: hazErr } = await supabase.from("work_location_hazards").insert(
         loc.hazards.map((h) => ({ location_id: newLoc.id, hazard_type: h }))
       );
+      if (hazErr) alert("บันทึกรูปแบบความเสี่ยงไม่สำเร็จ: " + hazErr.message);
     }
     if (loc.ppeRequired?.length) {
-      await supabase.from("location_ppe_requirements").insert(
+      const { error: ppeErr } = await supabase.from("location_ppe_requirements").insert(
         loc.ppeRequired.map((p) => ({ location_id: newLoc.id, ppe_type: p }))
       );
+      if (ppeErr) alert("บันทึกประเภท PPE ที่ต้องใส่ไม่สำเร็จ: " + ppeErr.message);
     }
     if (loc.riskAssessment) {
       await supabase.from("location_risk_assessments").insert({
@@ -6311,20 +6323,28 @@ export default function JorPorPrototype() {
     // แทนที่รายการความเสี่ยงทั้งหมดใหม่ทุกครั้งที่แก้ไข (ลบของเดิมแล้วใส่ใหม่ ง่ายกว่าไล่ diff
     // ทีละรายการ และจำนวนความเสี่ยงต่อสถานที่มีไม่เยอะจนเป็นปัญหาประสิทธิภาพ)
     if (fields.hazards !== undefined) {
-      await supabase.from("work_location_hazards").delete().eq("location_id", id);
+      const { error: delHazErr } = await supabase.from("work_location_hazards").delete().eq("location_id", id);
+      if (delHazErr) console.error("delete work_location_hazards error:", delHazErr);
       if (fields.hazards.length > 0) {
-        await supabase.from("work_location_hazards").insert(
+        const { error: insHazErr } = await supabase.from("work_location_hazards").insert(
           fields.hazards.map((h) => ({ location_id: id, hazard_type: h }))
         );
+        if (insHazErr) {
+          alert("บันทึกรูปแบบความเสี่ยงไม่สำเร็จ: " + insHazErr.message);
+        }
       }
     }
 
     if (fields.ppeRequired !== undefined) {
-      await supabase.from("location_ppe_requirements").delete().eq("location_id", id);
+      const { error: delPpeErr } = await supabase.from("location_ppe_requirements").delete().eq("location_id", id);
+      if (delPpeErr) console.error("delete location_ppe_requirements error:", delPpeErr);
       if (fields.ppeRequired.length > 0) {
-        await supabase.from("location_ppe_requirements").insert(
+        const { error: insPpeErr } = await supabase.from("location_ppe_requirements").insert(
           fields.ppeRequired.map((p) => ({ location_id: id, ppe_type: p }))
         );
+        if (insPpeErr) {
+          alert("บันทึกประเภท PPE ที่ต้องใส่ไม่สำเร็จ: " + insPpeErr.message);
+        }
       }
     }
 
