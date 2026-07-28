@@ -227,6 +227,61 @@ function mapCourseRow(row) {
   return { id: row.id, name: row.name, validityDays: row.validity_period_days };
 }
 
+// ---------------------------------------------------------------
+// อุปกรณ์ความปลอดภัย (safety_equipment_units) <-> Supabase mapping
+// ---------------------------------------------------------------
+const equipmentCategoryUiToDb = {
+  "SCBA": "scba", "เครื่องวัดแก๊ส": "gas_detector", "ถังดับเพลิง": "fire_extinguisher",
+  "ฝักบัวฉุกเฉิน": "emergency_shower", "ตู้สายฉีดน้ำดับเพลิง": "fire_hose_cabinet",
+  "ชุดอุปกรณ์ที่อับอากาศ": "confined_space_kit", "อื่นๆ": "other",
+};
+const equipmentCategoryDbToUi = Object.fromEntries(Object.entries(equipmentCategoryUiToDb).map(([k, v]) => [v, k]));
+
+const inspectionFrequencyUiToDb = {
+  "ทุกวัน (bump test)": "daily", "ทุกสัปดาห์": "weekly", "ทุก 1 เดือน": "monthly",
+  "ทุก 3 เดือน": "quarterly", "ทุก 6 เดือน": "semi_annual", "ทุกปี": "annual",
+};
+const inspectionFrequencyDbToUi = Object.fromEntries(Object.entries(inspectionFrequencyUiToDb).map(([k, v]) => [v, k]));
+// จำนวนวันต่อรอบ ใช้คำนวณ next_inspection_due = วันที่ตรวจล่าสุด + จำนวนวันนี้
+const inspectionFrequencyDays = { daily: 1, weekly: 7, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365, custom: 30 };
+
+const inspectionResultUiToDb = { "ผ่าน": "pass", "ผ่านแบบมีข้อสังเกต": "pass_with_notes", "ไม่ผ่าน": "fail" };
+const inspectionResultDbToUi = Object.fromEntries(Object.entries(inspectionResultUiToDb).map(([k, v]) => [v, k]));
+
+const equipmentStatusDbToUi = {
+  normal: "ปกติ", due_soon: "ใกล้ครบกำหนด", overdue: "เกินกำหนด", pending_reinspection: "รอตรวจซ้ำ",
+  damaged: "ชำรุด", out_of_service: "เลิกใช้งานชั่วคราว", retired: "ปลดระวาง",
+};
+
+function mapEquipmentRow(row) {
+  return {
+    id: row.id,
+    code: row.asset_code,
+    name: equipmentCategoryDbToUi[row.category] || row.category,
+    location: row.location,
+    brand: row.brand || "-",
+    frequency: inspectionFrequencyDbToUi[row.inspection_frequency] || row.inspection_frequency,
+    lastDate: row.last_inspection_date ? row.last_inspection_date.slice(0, 10) : "-",
+    nextDate: row.next_inspection_due ? row.next_inspection_due.slice(0, 10) : "-",
+    status: equipmentStatusDbToUi[row.status] || row.status,
+    pendingReinspectionDue: row.pending_reinspection_due ? row.pending_reinspection_due.slice(0, 10) : null,
+    history: [],
+  };
+}
+
+function mapInspectionRow(row, inspectorNameById) {
+  return {
+    rowId: row.id,
+    date: row.inspection_date ? row.inspection_date.slice(0, 10) : "",
+    inspector: inspectorNameById?.[row.inspected_by] || "-",
+    result: inspectionResultDbToUi[row.result] || row.result,
+    findings: row.findings || "-",
+    action: row.action_taken || "-",
+    correctiveDeadline: row.corrective_deadline,
+    isFollowUp: row.is_follow_up,
+  };
+}
+
 // ประเภท/รุ่นอุปกรณ์ PPE (ppe_catalog) — standard_ref/lifespan_days → camelCase
 // หมายเหตุ: ตาราง ppe_catalog ในสคีมาเดิมไม่มีคอลัมน์ "model" (มีแค่ category ซึ่งคนละความหมาย)
 // ต้องรัน ALTER TABLE ppe_catalog ADD COLUMN model VARCHAR(255); เพิ่มก่อนใช้งานส่วนนี้
@@ -828,7 +883,7 @@ function Dashboard({
               <div key={eq.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
                 <div>
                   <p className="text-sm text-slate-800">{eq.name} · {eq.code}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">ครบกำหนด {eq.nextDate}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">ครบกำหนด {eq.nextDate === "-" ? "-" : formatThaiDate(eq.nextDate)}</p>
                 </div>
                 <Badge tone={statusTone(eq.status)}>{eq.status}</Badge>
               </div>
@@ -2129,8 +2184,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
     const submit = () => {
       if (!canSubmit) return;
       onAddInspection(selected.id, {
-        date: "วันนี้",
-        inspector: "ผู้ใช้งานปัจจุบัน",
+        date: todayIso(),
         result: form.result,
         findings: form.findings || "-",
         action: form.action || "ไม่มีการซ่อม/เปลี่ยนอะไหล่",
@@ -2160,15 +2214,15 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
 
         <div className="grid grid-cols-3 gap-3">
           <MetricCard label="รอบตรวจ" value={selected.frequency} />
-          <MetricCard label="ตรวจล่าสุด" value={selected.lastDate} />
-          <MetricCard label="กำหนดครั้งถัดไป" value={selected.nextDate} />
+          <MetricCard label="ตรวจล่าสุด" value={selected.lastDate === "-" ? "-" : formatThaiDate(selected.lastDate)} />
+          <MetricCard label="กำหนดครั้งถัดไป" value={selected.nextDate === "-" ? "-" : formatThaiDate(selected.nextDate)} />
         </div>
 
         {selected.pendingReinspectionDue && (
           <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
             <AlertTriangle size={18} className="text-red-600 mt-0.5 shrink-0" />
             <p className="text-sm text-red-700">
-              ต้องตรวจซ้ำภายในวันที่ <span className="font-medium">{selected.pendingReinspectionDue}</span>
+              ต้องตรวจซ้ำภายในวันที่ <span className="font-medium">{formatThaiDate(selected.pendingReinspectionDue)}</span>
               {" "}— เป็นการตรวจพิเศษนอกรอบเพื่อยืนยันว่าแก้ไขจากผลตรวจครั้งก่อนเสร็จแล้ว
             </p>
           </div>
@@ -2263,7 +2317,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
 
         <div className="space-y-4">
           {selected.history.map((h, i) => (
-            <div key={i} className="flex gap-3">
+            <div key={h.rowId} className="flex gap-3">
               <div className="flex flex-col items-center pt-1.5">
                 <div className={`w-2 h-2 rounded-full ${h.result === "ไม่ผ่าน" ? "bg-red-500" : h.result === "ผ่านแบบมีข้อสังเกต" ? "bg-amber-500" : "bg-emerald-500"}`} />
                 {i < selected.history.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
@@ -2271,20 +2325,20 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               <div className="pb-4 flex-1">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-slate-800">
-                    {h.date} · {h.inspector}
+                    {formatThaiDate(h.date)} · {h.inspector}
                     {h.isFollowUp && (
                       <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-700 px-2 py-0.5 rounded">ตรวจพิเศษนอกรอบ</span>
                     )}
                   </p>
                   <div className="flex items-center gap-2">
                     <Badge tone={statusTone(h.result)}>{h.result}</Badge>
-                    <ConfirmDeleteButton onConfirm={() => onDeleteInspection(selected.id, i)} />
+                    <ConfirmDeleteButton onConfirm={() => onDeleteInspection(selected.id, h.rowId)} />
                   </div>
                 </div>
                 <p className="text-sm text-slate-500 mt-1.5">พบ: {h.findings}</p>
                 <p className="text-sm text-slate-700 mt-1">ดำเนินการ: {h.action}</p>
                 {h.correctiveDeadline && (
-                  <p className="text-sm text-red-600 mt-1">กำหนดแก้ไขภายในวันที่ {h.correctiveDeadline}</p>
+                  <p className="text-sm text-red-600 mt-1">กำหนดแก้ไขภายในวันที่ {formatThaiDate(h.correctiveDeadline)}</p>
                 )}
               </div>
             </div>
@@ -2429,9 +2483,9 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
                 <td className="px-4 py-2.5 text-slate-500">{eq.frequency}</td>
                 <td className="px-4 py-2.5 text-slate-500">
                   {eq.pendingReinspectionDue ? (
-                    <span className="text-red-600">ตรวจซ้ำ {eq.pendingReinspectionDue}</span>
+                    <span className="text-red-600">ตรวจซ้ำ {formatThaiDate(eq.pendingReinspectionDue)}</span>
                   ) : (
-                    eq.nextDate
+                    eq.nextDate === "-" ? "-" : formatThaiDate(eq.nextDate)
                   )}
                 </td>
                 <td className="px-4 py-2.5"><Badge tone={statusTone(eq.status)}>{eq.status}</Badge></td>
@@ -5128,6 +5182,8 @@ export default function JorPorPrototype() {
   const [ppeCatalog, setPpeCatalogData] = useState([]);
   const [ppe, setPpeData] = useState([]);
   const [ppeLoading, setPpeLoading] = useState(false);
+  const [equipment, setEquipmentData] = useState([]);
+  const [equipmentLoading, setEquipmentLoading] = useState(false);
 
   // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
   // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
@@ -5563,6 +5619,7 @@ export default function JorPorPrototype() {
       fetchTrainingRecords();
       fetchIncidents();
       fetchPpe();
+      fetchEquipment();
     }
   }, [currentUser?.id]);
 
@@ -5752,8 +5809,6 @@ export default function JorPorPrototype() {
   const tenant = tenantStore[currentUser.id] || createEmptyTenantData();
   const updateTenant = (patch) => setTenantStore({ ...tenantStore, [currentUser.id]: { ...tenant, ...patch } });
 
-  const equipment = tenant.equipment;
-  const setEquipment = (val) => updateTenant({ equipment: val });
   const noncompliance = tenant.noncompliance;
   const setNoncompliance = (val) => updateTenant({ noncompliance: val });
   const environmentalMeasurements = tenant.environmentalMeasurements;
@@ -5958,39 +6013,165 @@ export default function JorPorPrototype() {
     }
     fetchLocations();
   };
-  const addEquipment = (unit) => setEquipment([...equipment, unit]);
-  const deleteEquipmentUnit = (id) => setEquipment(equipment.filter((eq) => eq.id !== id));
+  // ดึงอุปกรณ์ความปลอดภัยพร้อมประวัติการตรวจของแต่ละชิ้น (คนละตารางเหมือน incidents/updates
+  // จึง join ฝั่งโค้ดด้วยแพทเทิร์นเดียวกัน)
+  async function fetchEquipment() {
+    setEquipmentLoading(true);
+    const { data: equipmentRows, error } = await supabase
+      .from("safety_equipment_units")
+      .select("id, category, asset_code, name, brand, model, location, inspection_frequency, last_inspection_date, next_inspection_due, pending_reinspection_due, status")
+      .eq("is_active", true)
+      .order("location");
+    if (error) {
+      console.error("fetchEquipment error:", error);
+      setEquipmentLoading(false);
+      return;
+    }
+    const equipmentIds = (equipmentRows || []).map((r) => r.id);
+    let historyByEquipment = {};
+    if (equipmentIds.length > 0) {
+      const { data: inspectionRows } = await supabase
+        .from("equipment_inspection_records")
+        .select("id, equipment_unit_id, inspected_by, inspection_date, result, findings, action_taken, corrective_deadline, is_follow_up")
+        .in("equipment_unit_id", equipmentIds)
+        .order("inspection_date", { ascending: false });
+      const inspectorIds = [...new Set((inspectionRows || []).map((r) => r.inspected_by).filter(Boolean))];
+      let inspectorNameById = {};
+      if (inspectorIds.length > 0) {
+        const { data: userRows } = await supabase.from("users").select("id, full_name").in("id", inspectorIds);
+        (userRows || []).forEach((u) => { inspectorNameById[u.id] = u.full_name; });
+      }
+      (inspectionRows || []).forEach((r) => {
+        if (!historyByEquipment[r.equipment_unit_id]) historyByEquipment[r.equipment_unit_id] = [];
+        historyByEquipment[r.equipment_unit_id].push(mapInspectionRow(r, inspectorNameById));
+      });
+    }
+    setEquipmentData(
+      (equipmentRows || []).map((r) => ({ ...mapEquipmentRow(r), history: historyByEquipment[r.id] || [] }))
+    );
+    setEquipmentLoading(false);
+  }
 
-  const addInspection = (equipmentId, record) => {
-    setEquipment(
-      equipment.map((eq) =>
-        eq.id === equipmentId
+  const addEquipment = async (unit) => {
+    const { data, error } = await supabase
+      .from("safety_equipment_units")
+      .insert({
+        organization_id: currentUser.organizationId,
+        category: equipmentCategoryUiToDb[unit.name] || "other",
+        asset_code: unit.code,
+        name: unit.name,
+        brand: unit.brand === "-" ? null : unit.brand,
+        location: unit.location,
+        inspection_frequency: inspectionFrequencyUiToDb[unit.frequency] || "custom",
+        status: "normal",
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("เพิ่มอุปกรณ์ไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setEquipmentData([...equipment, { ...mapEquipmentRow(data), history: [] }]);
+  };
+
+  const deleteEquipmentUnit = async (id) => {
+    const { error } = await supabase.from("safety_equipment_units").delete().eq("id", id);
+    if (error) {
+      alert("ลบอุปกรณ์ไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setEquipmentData(equipment.filter((eq) => eq.id !== id));
+  };
+
+  // บันทึกผลตรวจสภาพ 1 รายการ แล้วอัปเดตอุปกรณ์: วันตรวจล่าสุด, กำหนดตรวจครั้งถัดไป
+  // (คำนวณจากรอบตรวจของอุปกรณ์ชิ้นนี้), สถานะ, และกำหนดตรวจซ้ำนอกรอบ (ถ้าผลตรวจไม่ผ่าน)
+  const addInspection = async (equipmentId, record) => {
+    const eq = equipment.find((e) => e.id === equipmentId);
+    const { data, error } = await supabase
+      .from("equipment_inspection_records")
+      .insert({
+        organization_id: currentUser.organizationId,
+        equipment_unit_id: equipmentId,
+        inspected_by: currentUser.id,
+        inspection_date: record.date,
+        result: inspectionResultUiToDb[record.result] || "pass",
+        findings: record.findings,
+        action_taken: record.action,
+        corrective_deadline: record.correctiveDeadline,
+        is_follow_up: record.isFollowUp,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกผลตรวจไม่สำเร็จ: " + error.message);
+      return;
+    }
+    const failed = record.result === "ไม่ผ่าน";
+    const dbFreqKey = eq ? inspectionFrequencyUiToDb[eq.frequency] : null;
+    const nextDue = addDaysIso(record.date, inspectionFrequencyDays[dbFreqKey] ?? 30);
+    const newStatus = failed ? "pending_reinspection" : "normal";
+    await supabase
+      .from("safety_equipment_units")
+      .update({
+        last_inspection_date: record.date,
+        next_inspection_due: nextDue,
+        status: newStatus,
+        pending_reinspection_due: failed ? record.correctiveDeadline : null,
+      })
+      .eq("id", equipmentId);
+
+    const inspectorNameById = { [currentUser.id]: currentUser.name };
+    setEquipmentData(
+      equipment.map((e) =>
+        e.id === equipmentId
           ? {
-              ...eq,
-              history: [record, ...eq.history],
+              ...e,
+              history: [mapInspectionRow(data, inspectorNameById), ...e.history],
               lastDate: record.date,
-              status: record.result === "ไม่ผ่าน" ? "รอตรวจซ้ำ" : "ปกติ",
-              pendingReinspectionDue: record.result === "ไม่ผ่าน" ? record.correctiveDeadline : null,
+              nextDate: nextDue,
+              status: failed ? "รอตรวจซ้ำ" : "ปกติ",
+              pendingReinspectionDue: failed ? record.correctiveDeadline : null,
             }
-          : eq
+          : e
       )
     );
   };
 
-  const deleteInspection = (equipmentId, index) => {
-    setEquipment(
-      equipment.map((eq) => {
-        if (eq.id !== equipmentId) return eq;
-        const newHistory = eq.history.filter((_, i) => i !== index);
-        const latest = newHistory[0];
-        return {
-          ...eq,
-          history: newHistory,
-          lastDate: latest ? latest.date : eq.lastDate,
-          status: latest ? (latest.result === "ไม่ผ่าน" ? "รอตรวจซ้ำ" : "ปกติ") : "ปกติ",
-          pendingReinspectionDue: latest && latest.result === "ไม่ผ่าน" ? latest.correctiveDeadline : null,
-        };
+  const deleteInspection = async (equipmentId, rowId) => {
+    const { error } = await supabase.from("equipment_inspection_records").delete().eq("id", rowId);
+    if (error) {
+      alert("ลบผลตรวจไม่สำเร็จ: " + error.message);
+      return;
+    }
+    const eq = equipment.find((e) => e.id === equipmentId);
+    const newHistory = (eq?.history || []).filter((h) => h.rowId !== rowId);
+    const latest = newHistory[0];
+    const dbFreqKey = eq ? inspectionFrequencyUiToDb[eq.frequency] : null;
+    const latestFailed = latest?.result === "ไม่ผ่าน";
+    const newLastDate = latest ? latest.date : null;
+    const newNextDue = latest ? addDaysIso(latest.date, inspectionFrequencyDays[dbFreqKey] ?? 30) : null;
+    await supabase
+      .from("safety_equipment_units")
+      .update({
+        last_inspection_date: newLastDate,
+        next_inspection_due: newNextDue,
+        status: latest ? (latestFailed ? "pending_reinspection" : "normal") : "normal",
+        pending_reinspection_due: latest && latestFailed ? latest.correctiveDeadline : null,
       })
+      .eq("id", equipmentId);
+    setEquipmentData(
+      equipment.map((e) =>
+        e.id === equipmentId
+          ? {
+              ...e,
+              history: newHistory,
+              lastDate: newLastDate || "-",
+              nextDate: newNextDue || "-",
+              status: latest ? (latestFailed ? "รอตรวจซ้ำ" : "ปกติ") : "ปกติ",
+              pendingReinspectionDue: latest && latestFailed ? latest.correctiveDeadline : null,
+            }
+          : e
+      )
     );
   };
 
