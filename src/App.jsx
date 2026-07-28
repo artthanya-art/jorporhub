@@ -1,9 +1,7 @@
-import { useState, useRef, useEffect } from "react";
-import { supabase } from "./lib/supabaseClient";
+import { useState } from "react";
 import {
   LayoutDashboard, AlertTriangle, HardHat, Wrench, ClipboardCheck,
-  Plus, X, Camera, ArrowLeft, ChevronRight, Menu, Users, MapPin, ShieldAlert,
-  Wind, GraduationCap, LogOut,
+  Plus, X, Camera, ArrowLeft, ChevronRight, Menu, Users, MapPin,
 } from "lucide-react";
 
 // ---------------------------------------------------------------
@@ -38,51 +36,6 @@ function daysBetween(iso) {
 }
 
 const incidentStatusOptions = ["รายงานแล้ว", "กำลังตรวจสอบ", "อยู่ระหว่างแก้ไข", "ปิดเคส"];
-
-// ---------------------------------------------------------------
-// Incidents <-> Supabase mapping
-// severity/status ในหน้าจอเป็นข้อความไทย แต่ในฐานข้อมูลเป็น enum ภาษาอังกฤษ
-// (incident_severity / incident_status) จึงต้องแปลงไป-กลับทุกครั้งที่ read/write
-// ---------------------------------------------------------------
-const severityDbToUi = {
-  near_miss: "เกือบเกิดเหตุ", minor: "เล็กน้อย", moderate: "ปานกลาง", severe: "รุนแรง", fatal: "รุนแรง",
-};
-const severityUiToDb = {
-  "เกือบเกิดเหตุ": "near_miss", "เล็กน้อย": "minor", "ปานกลาง": "moderate", "รุนแรง": "severe",
-};
-const incidentStatusDbToUi = {
-  reported: "รายงานแล้ว", investigating: "กำลังตรวจสอบ", corrective_action: "อยู่ระหว่างแก้ไข", closed: "ปิดเคส",
-};
-const incidentStatusUiToDb = {
-  "รายงานแล้ว": "reported", "กำลังตรวจสอบ": "investigating", "อยู่ระหว่างแก้ไข": "corrective_action", "ปิดเคส": "closed",
-};
-
-// รวม incident + พนักงานบาดเจ็บ (incident_injured_employees) + ความคืบหน้า (incident_updates)
-// ที่ดึงแยกกัน 3 ตาราง ให้เป็น object เดียวที่หน้าจอ IncidentsPage/IncidentDetail คาดหวัง
-function mapIncidentRow(row, injuredRows, updateRows, updatedByNameById) {
-  return {
-    id: row.id,
-    location: row.location || "-",
-    type: row.injury_type || "-",
-    severity: severityDbToUi[row.severity] || row.severity,
-    incidentDate: row.incident_date ? row.incident_date.slice(0, 10) : "",
-    status: incidentStatusDbToUi[row.status] || row.status,
-    description: row.description || "-",
-    injuredEmployees: (injuredRows || []).map((e) => ({
-      rowId: e.id,
-      employeeId: e.employee_id,
-      lostWorkdays: e.lost_workdays,
-      injuryType: e.injury_description || "-",
-    })),
-    updates: (updateRows || []).map((u) => ({
-      rowId: u.id,
-      date: u.created_at ? u.created_at.slice(0, 10) : "",
-      by: updatedByNameById?.[u.updated_by] || "-",
-      note: u.note,
-      newStatus: u.new_status ? incidentStatusDbToUi[u.new_status] : null,
-    })),
-  };
-}
 
 // อุบัติเหตุหนึ่งครั้งอาจมีพนักงานบาดเจ็บได้หลายคน แต่ละคนมีจำนวนวันหยุดงานของตัวเอง
 function incidentHasLTI(incident) {
@@ -120,199 +73,10 @@ const initialIncidents = [
   },
 ];
 
-const userTypeLabel = { free: "Free", silver: "Silver", gold: "Gold" };
-const userTypeOptions = Object.keys(userTypeLabel);
-
-// รายการหน้าทั้งหมดในระบบที่กำหนดสิทธิ์การเข้าถึงได้ต่อประเภทผู้ใช้งาน (ไม่รวมหน้าแอดมิน)
-const PAGE_OPTIONS = [
-  { key: "dashboard", label: "แดชบอร์ด" },
-  { key: "incidents", label: "อุบัติเหตุ" },
-  { key: "unsafeActs", label: "การกระทำที่ไม่ปลอดภัย" },
-  { key: "environmental", label: "ตรวจวัดสิ่งแวดล้อม" },
-  { key: "trainingMatrix", label: "Training Matrix" },
-  { key: "checklist", label: "ตรวจสอบ" },
-  { key: "employees", label: "พนักงาน" },
-  { key: "locations", label: "สถานที่ทำงาน" },
-  { key: "ppe", label: "PPE" },
-  { key: "equipment", label: "อุปกรณ์ความปลอดภัย" },
-];
-const ALL_PAGE_KEYS = PAGE_OPTIONS.map((p) => p.key);
-
-// แปลงแถวจากตาราง users (join กับ organizations + subscriptions + subscription_plans)
-// ให้เป็นรูปแบบ object ที่โค้ดฝั่งหน้าจอทั้งหมดคาดหวัง (name, companyName, userType ฯลฯ)
-// เพราะชื่อฟิลด์ในฐานข้อมูลจริง (full_name, role, approval_status) ต่างจากชื่อที่ใช้
-// ในหน้าจอ (name, status, userType) ตั้งแต่ตอนออกแบบ schema ครั้งแรก
-function mapUserRow(row) {
-  if (!row) return null;
-  const planName = row.organization?.subscriptions?.[0]?.plan?.name?.toLowerCase() ?? "free";
-  return {
-    id: row.id,
-    name: row.full_name,
-    companyName: row.organization?.name ?? "-",
-    organizationId: row.organization?.id ?? null,
-    email: row.email,
-    userType: row.role === "super_admin" ? null : planName,
-    status: row.approval_status,
-    isAdmin: row.role === "super_admin",
-    registeredAt: row.created_at ? row.created_at.slice(0, 10) : null,
-  };
-}
-
-const USER_SELECT_QUERY = `
-  id, email, full_name, role, approval_status, created_at,
-  organization:organizations (
-    id, name,
-    subscriptions ( status, plan:subscription_plans ( name ) )
-  )
-`;
-
-// แปลงแถวจากตาราง employees จริง (employee_code, full_name, primary_location_id) ให้เป็น
-// รูปแบบที่หน้าจอทั้งหมดคาดหวัง (code, name, primaryLocationId) เพราะชื่อฟิลด์ในฐานข้อมูล
-// เขียนแบบ snake_case ตาม schema แต่โค้ดหน้าจอเขียนไว้ตั้งแต่แรกแบบ camelCase
-function mapEmployeeRow(row) {
-  return {
-    id: row.id,
-    code: row.employee_code || "-",
-    name: row.full_name,
-    position: row.position || "-",
-    department: row.department || "-",
-    primaryLocationId: row.primary_location_id,
-  };
-}
-
-// แปลงกลับจากรูปแบบหน้าจอ ให้เป็นชื่อคอลัมน์จริงตอนจะ insert/update เข้า Supabase
-function toEmployeeRow(emp, organizationId) {
-  return {
-    organization_id: organizationId,
-    employee_code: emp.code === "-" ? null : emp.code,
-    full_name: emp.name,
-    position: emp.position === "-" ? null : emp.position,
-    department: emp.department === "-" ? null : emp.department,
-    primary_location_id: emp.primaryLocationId || null,
-  };
-}
-
-// รวมข้อมูล 3 ตาราง (work_locations + work_location_hazards + location_risk_assessments
-// รอบล่าสุด) ให้เป็น object เดียวที่หน้าจอใช้งานอยู่แล้ว — assessorName ใช้ currentUser.name
-// ตรงๆ แทนการ join ไปตาราง users เพราะตอนนี้ 1 บริษัท = 1 ผู้ใช้เท่านั้น
-function mapLocationRow(loc, hazardRows, latestAssessment, assessorName) {
-  return {
-    id: loc.id,
-    name: loc.name,
-    building: loc.building || "-",
-    description: loc.description || "-",
-    riskLevel: loc.risk_level,
-    hazards: (hazardRows || []).map((h) => h.hazard_type),
-    riskAssessment: latestAssessment
-      ? {
-          riskLevel: latestAssessment.risk_level,
-          findings: latestAssessment.findings || "-",
-          controlMeasures: latestAssessment.control_measures || "-",
-          nextDue: latestAssessment.next_assessment_due || "",
-          updatedAt: latestAssessment.assessment_date,
-          updatedBy: assessorName || "-",
-        }
-      : {
-          riskLevel: loc.risk_level, findings: "-", controlMeasures: "-", nextDue: "",
-          updatedAt: loc.created_at, updatedBy: "-",
-        },
-    // ยังไม่รองรับรูปสถานที่ผ่าน Supabase Storage — ผูกเข้ากับ state ท้องถิ่นแยกต่างหาก
-    // ที่ระดับ App component แทน (ดู locationPhotos)
-    photoUrl: null,
-  };
-}
-
-// หลักสูตร (training_courses) — validity_period_days → validityDays
-function mapCourseRow(row) {
-  return { id: row.id, name: row.name, validityDays: row.validity_period_days };
-}
-
-// ประเภท/รุ่นอุปกรณ์ PPE (ppe_catalog) — standard_ref/lifespan_days → camelCase
-// หมายเหตุ: ตาราง ppe_catalog ในสคีมาเดิมไม่มีคอลัมน์ "model" (มีแค่ category ซึ่งคนละความหมาย)
-// ต้องรัน ALTER TABLE ppe_catalog ADD COLUMN model VARCHAR(255); เพิ่มก่อนใช้งานส่วนนี้
-function mapPpeCatalogRow(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    model: row.model || "-",
-    standard: row.standard_ref || "-",
-    lifespanDays: row.lifespan_days,
-  };
-}
-
-// การเบิก PPE (ppe_issuance) — ไม่มีชื่อ/รุ่น/มาตรฐานอุปกรณ์เก็บซ้ำในตารางนี้ (เก็บแค่
-// ppe_catalog_id) จึงต้อง join กับ ppe_catalog ฝั่งโค้ดเสมอ (catalogById ส่งเข้ามาจากตอน fetch)
-function mapPpeIssuanceRow(row, catalogById) {
-  const cat = catalogById?.[row.ppe_catalog_id];
-  return {
-    id: row.id,
-    employeeId: row.employee_id,
-    catalogId: row.ppe_catalog_id,
-    name: cat?.name || "-",
-    model: cat?.model || "-",
-    standard: cat?.standard_ref || "-",
-    issuedDate: row.issued_date,
-    expiry: row.expiry_date,
-    quantity: row.quantity,
-    reason: row.issuance_reason,
-  };
-}
-
-// requirement ของ Training Matrix (position/hazard_type → course) — course_id เก็บเป็น
-// UUID ตรงๆ ไม่ต้องแปลงชื่อฟิลด์อะไรมาก
-function mapRequirementRow(row) {
-  return { id: row.id, position: row.position, hazardType: row.hazard_type, courseId: row.course_id };
-}
-
-// ผลอบรมของพนักงานรายคน (training_records) — completion_date/expiry_date → camelCase
-function mapTrainingRecordRow(row) {
-  return {
-    id: row.id,
-    employeeId: row.employee_id,
-    courseId: row.course_id,
-    completionDate: row.completion_date,
-    expiryDate: row.expiry_date,
-  };
-}
-
-async function fetchUserProfile(authUserId) {
-  const { data, error } = await supabase
-    .from("users")
-    .select(USER_SELECT_QUERY)
-    .eq("id", authUserId)
-    .maybeSingle();
-  if (error) {
-    console.error("fetchUserProfile error:", error);
-    return null;
-  }
-  return mapUserRow(data);
-}
-
-// ผู้ใช้แต่ละคน = แต่ละบริษัท (tenant) แยกข้อมูลกันคนละชุดโดยสมบูรณ์ — ไม่มีแนวคิด
-// "หลายคนใช้ร่วมกันในบริษัทเดียว" อีกต่อไป มีเพียงบัญชีแอดมินระบบ (isAdmin) เท่านั้นที่แยกต่างหาก
-// (รายชื่อผู้ใช้จริงตอนนี้มาจาก Supabase ผ่าน fetchAllUsers()/fetchUserProfile() ด้านบนแล้ว
-// ไม่ใช้ mock array นี้อีกต่อไป)
-
-// สิทธิ์การเข้าถึงหน้ากำหนดตาม "ประเภทผู้ใช้งาน" (free/silver/gold) ไม่ใช่รายบุคคล — แก้ไขได้
-// ที่หน้า "จัดการประเภทผู้ใช้งาน" เท่านั้น ผู้ใช้ที่มีประเภทเดียวกันจะเห็นเมนูเหมือนกันทั้งหมด
-const initialTierPermissions = {
-  free: ["dashboard", "incidents", "employees", "checklist"],
-  silver: ["dashboard", "incidents", "ppe", "equipment", "employees", "locations", "checklist"],
-  gold: [...ALL_PAGE_KEYS],
-};
-
-// ข้อจำกัดการบันทึกข้อมูลตามประเภทผู้ใช้งาน — ตอนนี้รองรับจำกัดจำนวนพนักงานสูงสุด
-// ค่า null = ไม่จำกัด ขยายเพิ่มรายการอื่น (เช่น สถานที่, อุปกรณ์) ได้ในอนาคตตามรูปแบบเดียวกัน
-const initialTierLimits = {
-  free: { maxEmployees: 5 },
-  silver: { maxEmployees: 50 },
-  gold: { maxEmployees: null },
-};
-
 const initialEmployees = [
-  { id: 1, code: "EMP-001", name: "สมศักดิ์ ใจดี", position: "ช่างเทคนิค", department: "ซ่อมบำรุง", primaryLocationId: 1 },
-  { id: 2, code: "EMP-002", name: "วิภา สายใจ", position: "ผู้ควบคุมเครื่องจักร", department: "ไลน์ผลิต 2", primaryLocationId: 2 },
-  { id: 3, code: "EMP-003", name: "ประยุทธ มั่นคง", position: "พนักงานคลังสินค้า", department: "คลังสินค้า", primaryLocationId: 1 },
+  { id: 1, name: "สมศักดิ์ ใจดี", position: "ช่างเทคนิค", department: "ซ่อมบำรุง" },
+  { id: 2, name: "วิภา สายใจ", position: "ผู้ควบคุมเครื่องจักร", department: "ไลน์ผลิต 2" },
+  { id: 3, name: "ประยุทธ มั่นคง", position: "พนักงานคลังสินค้า", department: "คลังสินค้า" },
 ];
 
 const hazardTypeLabel = {
@@ -391,128 +155,6 @@ const initialLocations = [
   },
 ];
 
-const measurementTypeLabel = {
-  noise: "เสียง",
-  heat: "ความร้อน (WBGT)",
-  light: "ความเข้มแสง",
-  dust: "ฝุ่นละออง",
-  chemical_vapor: "ไอสารเคมี",
-  ventilation: "อัตราการระบายอากาศ",
-  other: "อื่นๆ",
-};
-const measurementTypeOptions = Object.keys(measurementTypeLabel);
-
-// สถานะการแก้ไขสำหรับติดตามผลตรวจวัดที่ไม่ผ่านมาตรฐาน จนกว่าจะแก้ไขเสร็จ
-const correctionStatusLabel = { none: "ยังไม่มีการแก้ไข", in_progress: "อยู่ระหว่างดำเนินการ", resolved: "แก้ไขแล้ว" };
-const correctionStatusOptions = Object.keys(correctionStatusLabel);
-const correctionStatusTone = (s) => {
-  if (s === "resolved") return "bg-emerald-50 text-emerald-700";
-  if (s === "in_progress") return "bg-amber-50 text-amber-700";
-  return "bg-slate-100 text-slate-600";
-};
-
-const initialEnvironmentalMeasurements = [
-  {
-    id: 1, locationId: 2, measurementType: "noise", unit: "dB(A)", standardLimit: 85,
-    measuredAt: "2026-05-15", nextDue: "2026-11-15",
-    notes: "เกินมาตรฐานเล็กน้อยช่วงเครื่องจักรทำงานพร้อมกันหลายเครื่อง",
-    points: [
-      { label: "จุดที่ 1 ใกล้เครื่องปั๊ม", value: 87, result: "fail" },
-      { label: "จุดที่ 2 กลางไลน์ผลิต", value: 82, result: "pass" },
-      { label: "จุดที่ 3 ใกล้ทางเข้า", value: 79, result: "pass" },
-    ],
-    failCount: 1, result: "fail", correctionStatus: "in_progress",
-    planFileName: null, planFileUrl: null,
-  },
-  {
-    id: 2, locationId: 3, measurementType: "chemical_vapor", unit: "ppm", standardLimit: 25,
-    measuredAt: "2026-04-10", nextDue: "2026-10-10",
-    notes: "อยู่ในเกณฑ์ปลอดภัย",
-    points: [
-      { label: "จุดที่ 1 หน้าตู้ดูดควัน", value: 12, result: "pass" },
-      { label: "จุดที่ 2 กลางห้องปฏิบัติการ", value: 8, result: "pass" },
-    ],
-    failCount: 0, result: "pass",
-    planFileName: null, planFileUrl: null,
-  },
-  {
-    id: 3, locationId: 4, measurementType: "ventilation", unit: "ACH", standardLimit: 10,
-    measuredAt: "2026-07-01", nextDue: "2026-10-01",
-    notes: "อัตราการระบายอากาศต่ำกว่ามาตรฐานที่กำหนด",
-    points: [
-      { label: "จุดที่ 1 ทางเข้าถังปฏิกรณ์", value: 8, result: "fail" },
-    ],
-    failCount: 1, result: "fail", correctionStatus: "none",
-    planFileName: null, planFileUrl: null,
-  },
-];
-
-// ---------------------------------------------------------------
-// Training Matrix — หลักสูตรที่ต้องอบรมตามตำแหน่งงานและ/หรือความเสี่ยงของสถานที่ประจำ
-// ---------------------------------------------------------------
-
-const initialTrainingCourses = [
-  { id: 1, name: "เจ้าหน้าที่ความปลอดภัยหัวหน้างาน", validityDays: null },
-  { id: 2, name: "การทำงานบนที่สูง", validityDays: 365 },
-  { id: 3, name: "การทำงานในที่อับอากาศ", validityDays: 365 },
-  { id: 4, name: "ความปลอดภัยในการทำงานกับสารเคมี", validityDays: 365 },
-  { id: 5, name: "ดับเพลิงขั้นต้น", validityDays: 365 },
-  { id: 6, name: "การป้องกันเสียงดังในสถานที่ทำงาน", validityDays: 365 },
-];
-
-// position/hazardType อย่างน้อยต้องมี 1 อย่าง — ถ้ามีทั้งคู่ ต้องตรงทั้งสองเงื่อนไข
-const initialTrainingRequirements = [
-  { id: 1, position: null, hazardType: "work_at_height", courseId: 2 },
-  { id: 2, position: null, hazardType: "confined_space", courseId: 3 },
-  { id: 3, position: null, hazardType: "chemical", courseId: 4 },
-  { id: 4, position: "ช่างเทคนิค", hazardType: null, courseId: 5 },
-  { id: 5, position: null, hazardType: "noise", courseId: 6 },
-];
-
-const initialTrainingRecords = [
-  { id: 1, employeeId: 1, courseId: 2, completionDate: "2026-03-01", expiryDate: "2027-03-01" },
-  { id: 2, employeeId: 3, courseId: 2, completionDate: "2024-01-01", expiryDate: "2025-01-01" },
-];
-
-// หา courseId ทั้งหมดที่พนักงานคนนี้ต้องอบรม ตามตำแหน่ง + ความเสี่ยงของสถานที่ประจำ
-function getRequiredCourseIds(employee, locations, requirements) {
-  const loc = locations.find((l) => l.id === employee.primaryLocationId);
-  const locationHazards = loc ? loc.hazards : [];
-  // normalize ("NFC") ช่วยกันกรณีข้อความตำแหน่งงานที่พิมพ์/วางมาจากที่ต่างกัน (เช่น LINE, Word)
-  // มีอักขระที่มองไม่เห็นด้วยตาเปล่าปนอยู่ ทำให้ === ไม่ตรงกันทั้งที่ดูเหมือนข้อความเดียวกัน
-  const normalizePosition = (s) => (s || "").trim().normalize("NFC");
-  const empPosition = normalizePosition(employee.position);
-  const ids = new Set();
-  requirements.forEach((r) => {
-    const reqPosition = normalizePosition(r.position);
-    if (r.position && r.hazardType) {
-      if (reqPosition === empPosition && locationHazards.includes(r.hazardType)) ids.add(r.courseId);
-    } else if (r.position) {
-      if (reqPosition === empPosition) ids.add(r.courseId);
-    } else if (r.hazardType) {
-      if (locationHazards.includes(r.hazardType)) ids.add(r.courseId);
-    }
-  });
-  return [...ids];
-}
-
-// สถานะการอบรมของพนักงานต่อหลักสูตรหนึ่ง: missing / expired / expiring_soon / compliant
-function getTrainingComplianceStatus(employeeId, courseId, trainingRecords) {
-  const records = trainingRecords.filter((r) => r.employeeId === employeeId && r.courseId === courseId);
-  if (records.length === 0) return "missing";
-  const validRecord = records.find((r) => !r.expiryDate || daysUntil(r.expiryDate) > 0);
-  if (!validRecord) return "expired";
-  if (validRecord.expiryDate && daysUntil(validRecord.expiryDate) <= 30) return "expiring_soon";
-  return "compliant";
-}
-
-const trainingStatusLabel = { missing: "ยังไม่ผ่าน", expired: "หมดอายุ", expiring_soon: "ใกล้หมดอายุ", compliant: "ผ่านแล้ว" };
-const trainingStatusTone = (s) => {
-  if (s === "compliant") return "bg-emerald-50 text-emerald-700";
-  if (s === "expiring_soon") return "bg-amber-50 text-amber-700";
-  return "bg-red-50 text-red-700";
-};
-
 const reasonLabel = {
   initial_issue: "เบิกครั้งแรก",
   lost: "ของหาย",
@@ -537,10 +179,10 @@ function addDaysIso(iso, days) {
 // ทะเบียนประเภท/รุ่นอุปกรณ์ PPE พร้อมอายุการใช้งานมาตรฐาน (วัน) — ใช้คำนวณรอบการแจกครั้งถัดไป
 // อัตโนมัติเมื่อบันทึกการรับมอบ แทนที่จะต้องกรอกวันหมดอายุเองทุกครั้ง
 const initialPpeCatalog = [
-  { id: 1, name: "หมวกนิรภัย", model: "MSA V-Gard", standard: "มอก. 368-2562", lifespanDays: 180 },
-  { id: 2, name: "ถุงมือกันบาด", model: "Ansell HyFlex 11-435", standard: "EN 388:2018", lifespanDays: 180 },
-  { id: 3, name: "รองเท้านิรภัย", model: "Cat Diagnostic", standard: "มอก. 523-2564", lifespanDays: 365 },
-  { id: 4, name: "แว่นตานิรภัย", model: "3M SecureFit 400", standard: "ANSI Z87.1-2025", lifespanDays: 365 },
+  { id: 1, name: "หมวกนิรภัย", standard: "มอก. 368-2562", lifespanDays: 180 },
+  { id: 2, name: "ถุงมือกันบาด", standard: "EN 388:2018", lifespanDays: 180 },
+  { id: 3, name: "รองเท้านิรภัย", standard: "มอก. 523-2564", lifespanDays: 365 },
+  { id: 4, name: "แว่นตานิรภัย", standard: "ANSI Z87.1-2025", lifespanDays: 365 },
 ];
 
 const initialPpe = [
@@ -552,8 +194,8 @@ const initialPpe = [
 ];
 
 const initialNoncompliance = [
-  { id: 1, employeeId: 2, ppeName: "หมวกนิรภัย", location: "ไลน์ผลิต 2", date: "2026-07-19", action: "เตือนวาจา", notes: "ไม่ได้สวมหมวกขณะเดินผ่านพื้นที่เครื่องจักร" },
-  { id: 2, employeeId: 2, ppeName: "ถุงมือกันบาด", location: "ไลน์ผลิต 2", date: "2026-06-02", action: "เตือนวาจา", notes: "ถอดถุงมือขณะหยิบชิ้นงานที่มีคม" },
+  { id: 1, employeeId: 2, ppeName: "หมวกนิรภัย", location: "ไลน์ผลิต 2", date: "19 ก.ค. 2569", action: "เตือนวาจา", notes: "ไม่ได้สวมหมวกขณะเดินผ่านพื้นที่เครื่องจักร" },
+  { id: 2, employeeId: 2, ppeName: "ถุงมือกันบาด", location: "ไลน์ผลิต 2", date: "2 มิ.ย. 2569", action: "เตือนวาจา", notes: "ถอดถุงมือขณะหยิบชิ้นงานที่มีคม" },
 ];
 
 const initialEquipment = [
@@ -644,69 +286,11 @@ function MetricCard({ label, value, tone = "text-slate-900" }) {
   );
 }
 
-// การ์ดสรุปตัวเลขสีสันสำหรับหน้าแดชบอร์ดโดยเฉพาะ — ใช้ gradient + เงา + ไอคอน ให้ดูมีชีวิตชีวา
-// กว่า MetricCard ธรรมดาที่ใช้ในหน้าอื่นๆ (อุปกรณ์ความปลอดภัย ฯลฯ) ซึ่งยังคงสไตล์เรียบเดิมไว้
-function DashboardMetricCard({ label, value, icon: Icon, tone = "slate" }) {
-  const styles = {
-    slate: { bg: "from-slate-50 to-slate-100", text: "text-slate-900", iconBg: "bg-slate-200 text-slate-600" },
-    emerald: { bg: "from-emerald-50 to-emerald-100", text: "text-emerald-700", iconBg: "bg-emerald-200 text-emerald-700" },
-    amber: { bg: "from-amber-50 to-amber-100", text: "text-amber-700", iconBg: "bg-amber-200 text-amber-700" },
-    red: { bg: "from-red-50 to-red-100", text: "text-red-700", iconBg: "bg-red-200 text-red-700" },
-  };
-  const s = styles[tone] || styles.slate;
-  return (
-    <div className={`bg-gradient-to-br ${s.bg} rounded-xl p-4 border border-white shadow-sm hover:shadow-md transition-shadow`}>
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-slate-700 font-bold">{label}</p>
-        {Icon && (
-          <div className={`w-7 h-7 rounded-lg ${s.iconBg} flex items-center justify-center shrink-0`}>
-            <Icon size={14} />
-          </div>
-        )}
-      </div>
-      <p className={`text-2xl font-bold ${s.text}`}>{value}</p>
-    </div>
-  );
-}
-
 function Card({ children, className = "" }) {
   return (
-    <div className={`bg-white border border-slate-200 rounded-xl shadow-sm p-5 ${className}`}>
+    <div className={`bg-white border border-slate-200 rounded-xl p-5 ${className}`}>
       {children}
     </div>
-  );
-}
-
-// ปุ่มลบพร้อมยืนยัน — ไม่ใช้ window.confirm() ของเบราว์เซอร์ เพราะบางสภาพแวดล้อม (เช่น
-// iframe preview/sandbox ตอนทดสอบ) บล็อก dialog ของเบราว์เซอร์แบบเงียบๆ ทำให้กดแล้วดูเหมือน
-// ไม่มีอะไรเกิดขึ้นเลย จึงทำเป็น UI ยืนยันในตัวแอปเองแทน ใช้ได้ทุกสภาพแวดล้อมแน่นอน
-function ConfirmDeleteButton({ onConfirm, label = "ลบ", className = "" }) {
-  const [confirming, setConfirming] = useState(false);
-
-  if (confirming) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
-        <span className="text-slate-500">ยืนยันลบ?</span>
-        <button
-          onClick={() => {
-            onConfirm();
-            setConfirming(false);
-          }}
-          className="text-red-600 underline font-medium"
-        >
-          ใช่ ลบเลย
-        </button>
-        <button onClick={() => setConfirming(false)} className="text-slate-400 underline">
-          ยกเลิก
-        </button>
-      </span>
-    );
-  }
-
-  return (
-    <button onClick={() => setConfirming(true)} className={`text-xs text-slate-400 underline hover:text-red-600 ${className}`}>
-      {label}
-    </button>
   );
 }
 
@@ -714,29 +298,9 @@ function ConfirmDeleteButton({ onConfirm, label = "ลบ", className = "" }) {
 // Dashboard
 // ---------------------------------------------------------------
 
-function Dashboard({
-  incidents, ppe, equipment, locations, noncompliance, environmentalMeasurements,
-  employees, trainingRequirements, trainingRecords, trainingCourses, ltiBaselineDate, onSetLtiBaselineDate, currentUser,
-}) {
+function Dashboard({ incidents, ppe, equipment, ltiBaselineDate, onSetLtiBaselineDate }) {
   const equipmentAttention = equipment.filter((e) => e.status !== "ปกติ").length;
   const ppeSoon = ppe.filter((p) => daysUntil(p.expiry) <= 30).length;
-  const incidents30d = incidents.filter((i) => daysBetween(i.incidentDate) <= 30).length;
-  const noncompliance30d = noncompliance.filter((r) => daysBetween(r.date) <= 30).length;
-  const highRiskLocations = locations.filter((l) => l.riskLevel === "high" || l.riskLevel === "critical");
-  const envFailingMeasurements = [...environmentalMeasurements]
-    .filter((m) => m.result === "fail")
-    .sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
-
-  // นับหลักสูตรที่พนักงานแต่ละคน "ยังไม่ผ่าน" หรือ "หมดอายุ" เทียบกับ Training Matrix
-  const trainingGaps = [];
-  employees.forEach((emp) => {
-    getRequiredCourseIds(emp, locations, trainingRequirements).forEach((cid) => {
-      const status = getTrainingComplianceStatus(emp.id, cid, trainingRecords);
-      if (status === "missing" || status === "expired") {
-        trainingGaps.push({ employee: emp, courseId: cid, status });
-      }
-    });
-  });
 
   // "วันไม่มีอุบัติเหตุ" นับตามหลัก Lost Time Injury (LTI): หาอุบัติเหตุล่าสุดที่ทำให้ต้อง
   // หยุดงานจริง (lostWorkdays > 0) แล้วนับวันจากวันนั้นถึงวันนี้ — เกือบเกิดเหตุหรือบาดเจ็บ
@@ -747,42 +311,21 @@ function Dashboard({
   const ltiIncidents = incidents.filter(incidentHasLTI);
   const candidateDays = ltiIncidents.map((i) => daysBetween(i.incidentDate));
   if (ltiBaselineDate) candidateDays.push(daysBetween(ltiBaselineDate));
-  // วันที่สมัครใช้งานใช้เป็น "ทางเลือกสุดท้าย" เท่านั้น (ไม่ใช่ตัวเลือกที่มาแข่ง "ล่าสุดกว่า" กับ
-  // วันฐานที่กรอกเอง) เพราะวันที่สมัครจะใหม่กว่าบันทึกเอกสารเดิมที่เป็นเหตุการณ์ในอดีตเสมอ ถ้าเอา
-  // ไปแข่งด้วยจะกลบวันฐานที่กรอกเองทุกครั้ง ใช้ต่อเมื่อไม่มีทั้งอุบัติเหตุจริงและวันฐานที่กรอกเอง
-  let daysSinceLastLti;
-  if (candidateDays.length > 0) {
-    daysSinceLastLti = Math.min(...candidateDays);
-  } else if (currentUser?.registeredAt) {
-    daysSinceLastLti = daysBetween(currentUser.registeredAt);
-  } else {
-    daysSinceLastLti = null;
-  }
+  const daysSinceLastLti = candidateDays.length ? Math.min(...candidateDays) : null;
 
   return (
     <div className="space-y-5">
-      <div className="bg-gradient-to-r from-slate-900 to-slate-700 rounded-xl p-5 shadow-md text-white">
-        <h1 className="text-lg font-semibold">สวัสดี {currentUser?.name ?? ""}</h1>
-        <p className="text-sm text-slate-300 mt-0.5">{currentUser?.companyName ?? "-"} · อัปเดตล่าสุด {formatThaiDate(todayIso())}</p>
+      <div>
+        <h1 className="text-lg font-semibold text-slate-900">สวัสดี คุณสมชาย</h1>
+        <p className="text-sm text-slate-500 mt-0.5">บริษัท ABC จำกัด · อัปเดตล่าสุดวันนี้</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <DashboardMetricCard label="อุบัติเหตุในรอบ 30 วัน" value={incidents30d} icon={AlertTriangle} tone="slate" />
-        <DashboardMetricCard label="วันไม่มีอุบัติเหตุ (LTI)" value={daysSinceLastLti ?? "-"} icon={ClipboardCheck} tone="emerald" />
-        <DashboardMetricCard label="PPE ใกล้หมดอายุ" value={ppeSoon} icon={HardHat} tone="amber" />
-        <DashboardMetricCard label="อุปกรณ์ต้องเฝ้าระวัง" value={equipmentAttention} icon={Wrench} tone="red" />
-        <DashboardMetricCard label="หลักสูตรยังไม่ผ่าน" value={trainingGaps.length} icon={GraduationCap} tone="amber" />
-        <DashboardMetricCard label="การกระทำไม่ปลอดภัยใน 30 วัน" value={noncompliance30d} icon={ShieldAlert} tone="slate" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <MetricCard label="อุบัติเหตุ 30 วัน" value={incidents.length} />
+        <MetricCard label="PPE ใกล้หมดอายุ" value={ppeSoon} tone="text-amber-600" />
+        <MetricCard label="อุปกรณ์ต้องเฝ้าระวัง" value={equipmentAttention} tone="text-red-600" />
+        <MetricCard label="วันไม่มีอุบัติเหตุ (LTI)" value={daysSinceLastLti ?? "-"} tone="text-emerald-600" />
       </div>
-
-      <Card className="!p-3">
-        <p className="text-xs text-slate-500">
-          พนักงาน <span className="text-slate-800 font-medium">{employees.length}</span> คน ·
-          {" "}สถานที่ <span className="text-slate-800 font-medium">{locations.length}</span> แห่ง ·
-          {" "}อุปกรณ์ความปลอดภัย <span className="text-slate-800 font-medium">{equipment.length}</span> ชิ้น ·
-          {" "}รายการ PPE ที่แจกแล้ว <span className="text-slate-800 font-medium">{ppe.length}</span> รายการ
-        </p>
-      </Card>
 
       <div className="flex items-center gap-2 flex-wrap">
         <label className="text-xs text-slate-500">
@@ -806,7 +349,7 @@ function Dashboard({
 
       <div className="grid sm:grid-cols-2 gap-4">
         <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-3">อุบัติเหตุล่าสุด</p>
+          <p className="text-sm font-medium text-slate-900 mb-3">อุบัติเหตุล่าสุด</p>
           <div className="space-y-3">
             {[...incidents].sort((a, b) => (a.incidentDate < b.incidentDate ? 1 : -1)).slice(0, 3).map((inc) => (
               <div key={inc.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
@@ -817,12 +360,11 @@ function Dashboard({
                 <Badge tone={statusTone(inc.status)}>{inc.status}</Badge>
               </div>
             ))}
-            {incidents.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีอุบัติเหตุที่บันทึกไว้</p>}
           </div>
         </Card>
 
         <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-3">อุปกรณ์ที่ต้องเฝ้าระวัง</p>
+          <p className="text-sm font-medium text-slate-900 mb-3">อุปกรณ์ที่ต้องเฝ้าระวัง</p>
           <div className="space-y-3">
             {equipment.filter((e) => e.status !== "ปกติ").map((eq) => (
               <div key={eq.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
@@ -833,110 +375,7 @@ function Dashboard({
                 <Badge tone={statusTone(eq.status)}>{eq.status}</Badge>
               </div>
             ))}
-            {equipment.filter((e) => e.status !== "ปกติ").length === 0 && (
-              <p className="text-sm text-slate-400">อุปกรณ์ทุกชิ้นอยู่ในสภาพปกติ</p>
-            )}
           </div>
-        </Card>
-
-        <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-3">สถานที่ที่ต้องเฝ้าระวัง</p>
-          <div className="space-y-3">
-            {highRiskLocations.map((l) => (
-              <div key={l.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                <div>
-                  <p className="text-sm text-slate-800">{l.name}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{l.building}</p>
-                </div>
-                <Badge tone={riskLevelTone(l.riskLevel)}>{riskLevelLabel[l.riskLevel]}</Badge>
-              </div>
-            ))}
-            {highRiskLocations.length === 0 && <p className="text-sm text-slate-400">ไม่มีสถานที่ความเสี่ยงสูง/วิกฤตในขณะนี้</p>}
-          </div>
-        </Card>
-
-        <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-3">การกระทำที่ไม่ปลอดภัยล่าสุด</p>
-          <div className="space-y-3">
-            {noncompliance.slice(0, 3).map((r) => (
-              <div key={r.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                <div>
-                  <p className="text-sm text-slate-800">{r.ppeName} · {r.location}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{formatThaiDate(r.date)}</p>
-                </div>
-                <Badge tone={r.action === "ให้หยุดงาน" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}>{r.action}</Badge>
-              </div>
-            ))}
-            {noncompliance.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีบันทึกการไม่ปฏิบัติตาม</p>}
-          </div>
-        </Card>
-      </div>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">หลักสูตรที่ยังไม่ผ่านตาม Training Matrix</p>
-        <Card className="p-0 overflow-hidden">
-          {trainingGaps.length === 0 ? (
-            <p className="text-sm text-slate-400 p-4">พนักงานทุกคนผ่านหลักสูตรที่กำหนดครบแล้ว</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                    <th className="px-4 py-2.5 font-medium">หลักสูตร</th>
-                    <th className="px-4 py-2.5 font-medium">สถานะ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trainingGaps.slice(0, 5).map((g, i) => (
-                    <tr key={i} className="border-t border-slate-100">
-                      <td className="px-4 py-2.5">{g.employee.name}</td>
-                      <td className="px-4 py-2.5 text-slate-500">
-                        {trainingCourses.find((c) => c.id === g.courseId)?.name ?? "-"}
-                      </td>
-                      <td className="px-4 py-2.5"><Badge tone={trainingStatusTone(g.status)}>{trainingStatusLabel[g.status]}</Badge></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ผลการตรวจวัดสิ่งแวดล้อมที่ไม่ผ่าน</p>
-        <Card className="p-0 overflow-hidden">
-          {envFailingMeasurements.length === 0 ? (
-            <p className="text-sm text-slate-400 p-4">ยังไม่มีผลตรวจวัดที่ไม่ผ่านมาตรฐาน</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">สถานที่</th>
-                    <th className="px-4 py-2.5 font-medium">ประเภทการตรวจวัด</th>
-                    <th className="px-4 py-2.5 font-medium">จุดที่ไม่ผ่าน</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่วัด</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {envFailingMeasurements.slice(0, 5).map((m) => (
-                    <tr key={m.id} className="border-t border-slate-100">
-                      <td className="px-4 py-2.5">{locations.find((l) => l.id === m.locationId)?.name ?? "-"}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{measurementTypeLabel[m.measurementType]}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge tone="bg-red-50 text-red-700">
-                          {m.failCount ?? (m.points || []).filter((p) => p.result === "fail").length}/{m.points?.length ?? 1} จุด
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(m.measuredAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </Card>
       </div>
     </div>
@@ -947,7 +386,7 @@ function Dashboard({
 // Incidents
 // ---------------------------------------------------------------
 
-function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees }) {
+function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, locations, employees }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [locationMode, setLocationMode] = useState("select"); // "select" | "custom"
@@ -959,6 +398,10 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
   const autoLatestIncidentDate = incidents.length
     ? incidents.reduce((latest, i) => (i.incidentDate > latest ? i.incidentDate : latest), incidents[0].incidentDate)
     : null;
+
+  // ค่านี้ผู้ใช้แก้ไขเองได้ กรณีอยากให้นับ "วันเกิดเหตุล่าสุด" จากวันที่กำหนดแทนค่าที่คำนวณอัตโนมัติ
+  const [latestDateOverride, setLatestDateOverride] = useState(null);
+  const displayedLatestDate = latestDateOverride ?? autoLatestIncidentDate;
 
   const submit = () => {
     if (!form.location.trim() || !form.incidentDate) return;
@@ -986,10 +429,6 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
         onBack={() => setSelectedId(null)}
         onUpdate={onUpdate}
         onAddProgress={onAddProgress}
-        onRemoveProgress={onRemoveProgress}
-        onAddInjured={onAddInjured}
-        onUpdateInjured={onUpdateInjured}
-        onRemoveInjured={onRemoveInjured}
       />
     );
   }
@@ -1001,9 +440,20 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
           <h1 className="text-lg font-semibold text-slate-900">ทะเบียนอุบัติเหตุ</h1>
           <div className="flex items-center gap-2 mt-1.5">
             <label className="text-sm text-slate-500">วันเกิดเหตุล่าสุด:</label>
-            <span className="text-sm text-slate-700">
-              {autoLatestIncidentDate ? formatThaiDate(autoLatestIncidentDate) : "ยังไม่มีข้อมูล"}
-            </span>
+            <input
+              type="date"
+              value={displayedLatestDate ?? ""}
+              onChange={(e) => setLatestDateOverride(e.target.value)}
+              className="border border-slate-300 rounded-lg px-2 py-1 text-sm text-slate-700"
+            />
+            {latestDateOverride && (
+              <button
+                onClick={() => setLatestDateOverride(null)}
+                className="text-xs text-slate-400 underline hover:text-slate-600"
+              >
+                ใช้ค่าอัตโนมัติ
+              </button>
+            )}
           </div>
         </div>
         <button
@@ -1017,7 +467,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
       {showForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">รายงานอุบัติเหตุใหม่</p>
+            <p className="text-sm font-medium text-slate-900">รายงานอุบัติเหตุใหม่</p>
             <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -1128,7 +578,6 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               <th className="px-4 py-2.5 font-medium">หยุดงาน</th>
               <th className="px-4 py-2.5 font-medium">สถานะ</th>
               <th className="px-4 py-2.5"></th>
-              <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
@@ -1151,9 +600,6 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
                 </td>
                 <td className="px-4 py-2.5"><Badge tone={statusTone(inc.status)}>{inc.status}</Badge></td>
                 <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
-                <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                  <ConfirmDeleteButton onConfirm={() => onDeleteIncident(inc.id)} />
-                </td>
               </tr>
             ))}
           </tbody>
@@ -1168,7 +614,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
 // Incident detail — แก้ไขสถานะ/รายละเอียด และบันทึกความคืบหน้า
 // ---------------------------------------------------------------
 
-function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, onRemoveProgress, onAddInjured, onUpdateInjured, onRemoveInjured }) {
+function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress }) {
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState({
     location: incident.location,
@@ -1195,6 +641,8 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
   const submitProgress = () => {
     if (!progressNote.trim()) return;
     onAddProgress(incident.id, {
+      date: todayIso(),
+      by: "ผู้ใช้งานปัจจุบัน",
       note: progressNote,
       newStatus: progressStatus || null,
     });
@@ -1204,20 +652,28 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
 
   const addInjuredEmployee = () => {
     if (!newInjured.employeeId) return;
-    onAddInjured(incident.id, {
-      employeeId: newInjured.employeeId,
-      lostWorkdays: Number(newInjured.lostWorkdays) || 0,
-      injuryType: newInjured.injuryType || "-",
+    onUpdate(incident.id, {
+      injuredEmployees: [
+        ...incident.injuredEmployees,
+        {
+          employeeId: Number(newInjured.employeeId),
+          lostWorkdays: Number(newInjured.lostWorkdays) || 0,
+          injuryType: newInjured.injuryType || "-",
+        },
+      ],
     });
     setNewInjured({ employeeId: "", lostWorkdays: "0", injuryType: "" });
   };
 
-  const updateInjuredField = (rowId, field, value) => {
-    onUpdateInjured(incident.id, rowId, field, field === "lostWorkdays" ? Number(value) || 0 : value);
+  const updateInjuredField = (idx, field, value) => {
+    const updated = incident.injuredEmployees.map((e, i) =>
+      i === idx ? { ...e, [field]: field === "lostWorkdays" ? Number(value) || 0 : value } : e
+    );
+    onUpdate(incident.id, { injuredEmployees: updated });
   };
 
-  const removeInjuredEmployee = (rowId) => {
-    onRemoveInjured(incident.id, rowId);
+  const removeInjuredEmployee = (idx) => {
+    onUpdate(incident.id, { injuredEmployees: incident.injuredEmployees.filter((_, i) => i !== idx) });
   };
 
   return (
@@ -1236,9 +692,90 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
         <Badge tone={statusTone(incident.status)}>{incident.status}</Badge>
       </div>
 
+      <div>
+        <p className="text-sm font-medium text-slate-900 mb-3">พนักงานที่ได้รับบาดเจ็บ</p>
+        <Card className="p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-left">
+                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
+                <th className="px-4 py-2.5 font-medium">ลักษณะการบาดเจ็บ</th>
+                <th className="px-4 py-2.5 font-medium">จำนวนวันหยุดงาน</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {incident.injuredEmployees.map((e, idx) => (
+                <tr key={idx} className="border-t border-slate-100">
+                  <td className="px-4 py-2.5">{nameOf(e.employeeId)}</td>
+                  <td className="px-4 py-2.5">
+                    <input
+                      value={e.injuryType || ""}
+                      onChange={(ev) => updateInjuredField(idx, "injuryType", ev.target.value)}
+                      placeholder="เช่น มือบาดจากใบมีด"
+                      className="w-full min-w-[10rem] border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="number"
+                      min="0"
+                      value={e.lostWorkdays}
+                      onChange={(ev) => updateInjuredField(idx, "lostWorkdays", ev.target.value)}
+                      className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm"
+                    />
+                    <span className="text-slate-500 ml-1.5">วัน</span>
+                    {e.lostWorkdays > 0 && <span className="text-xs text-red-600 ml-2">(LTI)</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button onClick={() => removeInjuredEmployee(idx)} className="text-xs text-slate-400 underline hover:text-red-600">
+                      ลบ
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {incident.injuredEmployees.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-3 text-sm text-slate-400">ไม่มีพนักงานได้รับบาดเจ็บที่บันทึกไว้</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50">
+            <select
+              value={newInjured.employeeId}
+              onChange={(e) => setNewInjured({ ...newInjured, employeeId: e.target.value })}
+              className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            >
+              <option value="">เลือกพนักงาน...</option>
+              {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+            <input
+              value={newInjured.injuryType}
+              onChange={(e) => setNewInjured({ ...newInjured, injuryType: e.target.value })}
+              placeholder="ลักษณะการบาดเจ็บ"
+              className="flex-1 min-w-[9rem] border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+            <input
+              type="number"
+              min="0"
+              value={newInjured.lostWorkdays}
+              onChange={(e) => setNewInjured({ ...newInjured, lostWorkdays: e.target.value })}
+              className="w-20 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+              placeholder="วัน"
+            />
+            <button onClick={addInjuredEmployee} className="flex items-center gap-1 text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg">
+              <Plus size={14} /> เพิ่มพนักงาน
+            </button>
+          </div>
+        </Card>
+      </div>
+
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-slate-900">รายละเอียดและสถานะ</p>
+          <p className="text-sm font-medium text-slate-900">รายละเอียดและสถานะ</p>
           {!editing && (
             <button onClick={() => setEditing(true)} className="text-xs text-slate-500 underline hover:text-slate-700">
               แก้ไข
@@ -1302,106 +839,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
       </Card>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">พนักงานที่ได้รับบาดเจ็บ</p>
-        <Card className="p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-left">
-                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                <th className="px-4 py-2.5 font-medium">ลักษณะการบาดเจ็บ</th>
-                <th className="px-4 py-2.5 font-medium">จำนวนวันหยุดงาน</th>
-                <th className="px-4 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {incident.injuredEmployees.map((e) => (
-                <tr key={e.rowId} className="border-t border-slate-100">
-                  <td className="px-4 py-2.5">{nameOf(e.employeeId)}</td>
-                  <td className="px-4 py-2.5">
-                    <input
-                      value={e.injuryType || ""}
-                      onChange={(ev) => updateInjuredField(e.rowId, "injuryType", ev.target.value)}
-                      placeholder="เช่น มือบาดจากใบมีด"
-                      className="w-full min-w-[10rem] border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                    />
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <input
-                      type="number"
-                      min="0"
-                      value={e.lostWorkdays}
-                      onChange={(ev) => updateInjuredField(e.rowId, "lostWorkdays", ev.target.value)}
-                      className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                    />
-                    <span className="text-slate-500 ml-1.5">วัน</span>
-                    {e.lostWorkdays > 0 && <span className="text-xs text-red-600 ml-2">(LTI)</span>}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button onClick={() => removeInjuredEmployee(e.rowId)} className="text-xs text-slate-400 underline hover:text-red-600">
-                      ลบ
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {incident.injuredEmployees.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-3 text-sm text-slate-400">ไม่มีพนักงานได้รับบาดเจ็บที่บันทึกไว้</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
-          <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
-            <p className="text-xs font-medium text-slate-600 mb-2">เพิ่มพนักงานที่ได้รับบาดเจ็บ</p>
-            <div className="grid sm:grid-cols-3 gap-2 mb-2">
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
-                <select
-                  value={newInjured.employeeId}
-                  onChange={(e) => setNewInjured({ ...newInjured, employeeId: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-                >
-                  <option value="">เลือกพนักงาน...</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
-                <input
-                  value={newInjured.injuryType}
-                  onChange={(e) => setNewInjured({ ...newInjured, injuryType: e.target.value })}
-                  placeholder="เช่น มือบาดจากใบมีด"
-                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">จำนวนวันหยุดงาน</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={newInjured.lostWorkdays}
-                  onChange={(e) => setNewInjured({ ...newInjured, lostWorkdays: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-                  placeholder="0"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={addInjuredEmployee}
-                disabled={!newInjured.employeeId}
-                className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-4 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Plus size={15} /> บันทึกพนักงานบาดเจ็บ
-              </button>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ความคืบหน้า</p>
+        <p className="text-sm font-medium text-slate-900 mb-3">ความคืบหน้า</p>
         <Card className="mb-4">
           <label className="text-xs text-slate-500 block mb-1">บันทึกความคืบหน้าใหม่</label>
           <textarea
@@ -1430,27 +868,21 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
         </Card>
 
         <div className="space-y-4">
-          {[...incident.updates].reverse().map((u, i, arr) => (
-            <div key={u.rowId} className="flex gap-3">
+          {[...incident.updates].reverse().map((u, i) => (
+            <div key={i} className="flex gap-3">
               <div className="flex flex-col items-center pt-1.5">
                 <div className="w-2 h-2 rounded-full bg-slate-400" />
-                {i < arr.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
+                {i < incident.updates.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
               </div>
               <div className="pb-4 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-slate-800">
-                    {formatThaiDate(u.date)} · {u.by}
-                    {u.newStatus && (
-                      <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
-                        เปลี่ยนสถานะเป็น {u.newStatus}
-                      </span>
-                    )}
-                  </p>
-                  <ConfirmDeleteButton
-                    className="shrink-0"
-                    onConfirm={() => onRemoveProgress(incident.id, u.rowId)}
-                  />
-                </div>
+                <p className="text-sm font-medium text-slate-800">
+                  {formatThaiDate(u.date)} · {u.by}
+                  {u.newStatus && (
+                    <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                      เปลี่ยนสถานะเป็น {u.newStatus}
+                    </span>
+                  )}
+                </p>
                 <p className="text-sm text-slate-600 mt-1">{u.note}</p>
               </div>
             </div>
@@ -1499,7 +931,7 @@ function PpeByItemView({ employees, ppe }) {
               className="w-full flex items-center justify-between px-4 py-3 text-left"
             >
               <div>
-                <p className="text-sm font-semibold text-slate-900">{g.name}</p>
+                <p className="text-sm font-medium text-slate-900">{g.name}</p>
                 <p className="text-xs text-slate-500">จำนวนทั้งหมด {totalQuantity} · ถือครองโดย {g.items.length} คน</p>
               </div>
               <div className="flex items-center gap-3">
@@ -1556,15 +988,15 @@ function PpeByItemView({ employees, ppe }) {
   );
 }
 
-function NoncomplianceView({ employees, records, onAdd, onDelete }) {
+function NoncomplianceView({ employees, records, onAdd }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ employeeId: employees[0]?.id, ppeName: "", location: "", date: todayIso(), action: "เตือนวาจา", notes: "" });
+  const [form, setForm] = useState({ employeeId: employees[0]?.id, ppeName: "", location: "", action: "เตือนวาจา", notes: "" });
   const nameOf = (id) => employees.find((e) => e.id === id)?.name ?? "-";
 
   const submit = () => {
     if (!form.ppeName.trim() || !form.location.trim()) return;
-    onAdd({ id: Date.now(), ...form });
-    setForm({ employeeId: employees[0]?.id, ppeName: "", location: "", date: todayIso(), action: "เตือนวาจา", notes: "" });
+    onAdd({ id: Date.now(), ...form, date: "วันนี้" });
+    setForm({ employeeId: employees[0]?.id, ppeName: "", location: "", action: "เตือนวาจา", notes: "" });
     setShowForm(false);
   };
 
@@ -1584,7 +1016,7 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
       {showForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">บันทึกพบพนักงานไม่สวมใส่ PPE</p>
+            <p className="text-sm font-medium text-slate-900">บันทึกพบพนักงานไม่สวมใส่ PPE</p>
             <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -1632,15 +1064,6 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
                 <option>ให้หยุดงาน</option>
               </select>
             </div>
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">วันที่พบ</label>
-              <input
-                type="date"
-                value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              />
-            </div>
           </div>
           <div className="mb-4">
             <label className="text-xs text-slate-500 block mb-1">หมายเหตุ</label>
@@ -1674,7 +1097,6 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
               <th className="px-4 py-2.5 font-medium">วันที่พบ</th>
               <th className="px-4 py-2.5 font-medium">การดำเนินการ</th>
               <th className="px-4 py-2.5 font-medium">สะสม</th>
-              <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
@@ -1683,12 +1105,9 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
                 <td className="px-4 py-2.5">{nameOf(r.employeeId)}</td>
                 <td className="px-4 py-2.5">{r.ppeName}</td>
                 <td className="px-4 py-2.5 text-slate-500">{r.location}</td>
-                <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(r.date)}</td>
+                <td className="px-4 py-2.5 text-slate-500">{r.date}</td>
                 <td className="px-4 py-2.5"><Badge tone={r.action === "ให้หยุดงาน" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}>{r.action}</Badge></td>
                 <td className="px-4 py-2.5 text-slate-500">{countByEmployee(r.employeeId)} ครั้ง</td>
-                <td className="px-4 py-2.5 text-right">
-                  <ConfirmDeleteButton onConfirm={() => onDelete(r.id)} />
-                </td>
               </tr>
             ))}
           </tbody>
@@ -1699,193 +1118,143 @@ function NoncomplianceView({ employees, records, onAdd, onDelete }) {
   );
 }
 
-function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance }) {
+function PpeIssuanceView({ employees, catalog, onAddIssuance }) {
   const [form, setForm] = useState({
     employeeId: employees[0]?.id ?? "", catalogId: catalog[0]?.id ?? "",
     quantity: "1", receivedDate: todayIso(), reason: "initial_issue",
   });
   const [justAdded, setJustAdded] = useState(null);
 
-  const selectedCatalogItem = catalog.find((c) => c.id === form.catalogId);
+  const selectedCatalogItem = catalog.find((c) => c.id === Number(form.catalogId));
   const computedExpiry = selectedCatalogItem
     ? addDaysIso(form.receivedDate, selectedCatalogItem.lifespanDays)
     : null;
 
-  const nameOf = (id) => employees.find((e) => e.id === id)?.name ?? "-";
-
   const submit = () => {
     if (!form.employeeId || !selectedCatalogItem || !form.receivedDate) return;
     onAddIssuance({
-      employeeId: form.employeeId,
+      id: Date.now(),
+      employeeId: Number(form.employeeId),
       catalogId: selectedCatalogItem.id,
       name: selectedCatalogItem.name,
-      model: selectedCatalogItem.model || "-",
       standard: selectedCatalogItem.standard,
       issuedDate: form.receivedDate,
       expiry: computedExpiry,
       quantity: Number(form.quantity) || 1,
       reason: form.reason,
     });
-    setJustAdded({ employeeName: employees.find((e) => e.id === form.employeeId)?.name, name: selectedCatalogItem.name, expiry: computedExpiry });
+    setJustAdded({ employeeName: employees.find((e) => e.id === Number(form.employeeId))?.name, name: selectedCatalogItem.name, expiry: computedExpiry });
     setForm({ ...form, quantity: "1", receivedDate: todayIso(), reason: "initial_issue" });
   };
 
-  const sortedPpe = [...ppe].sort((a, b) => (a.issuedDate < b.issuedDate ? 1 : -1));
-
   return (
-    <div className="space-y-5">
-      <Card className="max-w-2xl">
-        <p className="text-sm font-semibold text-slate-900 mb-4">บันทึกการเบิก PPE</p>
+    <Card className="max-w-2xl">
+      <p className="text-sm font-medium text-slate-900 mb-4">บันทึกการรับมอบ PPE</p>
 
-        <div className="grid sm:grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-slate-500 block mb-1">พนักงานผู้รับมอบ</label>
-            <select
-              value={form.employeeId}
-              onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-            >
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 block mb-1">ประเภท/รุ่นอุปกรณ์</label>
-            <select
-              value={form.catalogId}
-              onChange={(e) => setForm({ ...form, catalogId: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-            >
-              {catalog.map((c) => <option key={c.id} value={c.id}>{c.name}{c.model && c.model !== "-" ? ` (${c.model})` : ""}</option>)}
-            </select>
-          </div>
+      <div className="grid sm:grid-cols-2 gap-3 mb-3">
+        <div>
+          <label className="text-xs text-slate-500 block mb-1">พนักงานผู้รับมอบ</label>
+          <select
+            value={form.employeeId}
+            onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          >
+            {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
         </div>
-
-        <div className="grid sm:grid-cols-3 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-slate-500 block mb-1">จำนวน</label>
-            <input
-              type="number" min="1"
-              value={form.quantity}
-              onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 block mb-1">วันที่รับ</label>
-            <input
-              type="date"
-              value={form.receivedDate}
-              onChange={(e) => setForm({ ...form, receivedDate: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 block mb-1">เหตุผลการเบิก</label>
-            <select
-              value={form.reason}
-              onChange={(e) => setForm({ ...form, reason: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-            >
-              {Object.entries(reasonLabel).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
-            </select>
-          </div>
+        <div>
+          <label className="text-xs text-slate-500 block mb-1">ประเภท/รุ่นอุปกรณ์</label>
+          <select
+            value={form.catalogId}
+            onChange={(e) => setForm({ ...form, catalogId: e.target.value })}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          >
+            {catalog.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
         </div>
-
-        {selectedCatalogItem && (
-          <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600 mb-4">
-            มาตรฐาน: {selectedCatalogItem.standard} · อายุการใช้งาน {selectedCatalogItem.lifespanDays} วัน
-            {" — "}
-            <span className="text-slate-800 font-medium">
-              กำหนดแจกครั้งถัดไป (ตามอายุใช้งาน): {formatThaiDate(computedExpiry)}
-            </span>
-          </div>
-        )}
-
-        <div className="flex justify-end">
-          <button onClick={submit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-            บันทึกการเบิก
-          </button>
-        </div>
-
-        {justAdded && (
-          <p className="text-xs text-emerald-700 mt-3">
-            บันทึกแล้ว: {justAdded.employeeName} ได้รับ {justAdded.name} · กำหนดแจกครั้งถัดไป {formatThaiDate(justAdded.expiry)}
-          </p>
-        )}
-      </Card>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติการเบิก PPE</p>
-        {sortedPpe.length === 0 ? (
-          <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติการเบิก PPE</p></Card>
-        ) : (
-          <Card className="p-0 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                    <th className="px-4 py-2.5 font-medium">อุปกรณ์</th>
-                    <th className="px-4 py-2.5 font-medium">มาตรฐาน</th>
-                    <th className="px-4 py-2.5 font-medium">จำนวน</th>
-                    <th className="px-4 py-2.5 font-medium">เหตุผลเบิก</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่รับ</th>
-                    <th className="px-4 py-2.5 font-medium">วันหมดอายุ</th>
-                    <th className="px-4 py-2.5"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedPpe.map((p) => (
-                    <tr key={p.id} className="border-t border-slate-100">
-                      <td className="px-4 py-2.5">{nameOf(p.employeeId)}</td>
-                      <td className="px-4 py-2.5">{p.name}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{p.standard}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{p.quantity}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{reasonLabel[p.reason]}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(p.issuedDate)}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(p.expiry)}</td>
-                      <td className="px-4 py-2.5 text-right">
-                        <ConfirmDeleteButton onConfirm={() => onDeleteIssuance(p.id)} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
       </div>
-    </div>
+
+      <div className="grid sm:grid-cols-3 gap-3 mb-3">
+        <div>
+          <label className="text-xs text-slate-500 block mb-1">จำนวน</label>
+          <input
+            type="number" min="1"
+            value={form.quantity}
+            onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 block mb-1">วันที่รับ</label>
+          <input
+            type="date"
+            value={form.receivedDate}
+            onChange={(e) => setForm({ ...form, receivedDate: e.target.value })}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 block mb-1">เหตุผลการเบิก</label>
+          <select
+            value={form.reason}
+            onChange={(e) => setForm({ ...form, reason: e.target.value })}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+          >
+            {Object.entries(reasonLabel).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {selectedCatalogItem && (
+        <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600 mb-4">
+          มาตรฐาน: {selectedCatalogItem.standard} · อายุการใช้งาน {selectedCatalogItem.lifespanDays} วัน
+          {" — "}
+          <span className="text-slate-800 font-medium">
+            กำหนดแจกครั้งถัดไป (ตามอายุใช้งาน): {formatThaiDate(computedExpiry)}
+          </span>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button onClick={submit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
+          บันทึกการรับมอบ
+        </button>
+      </div>
+
+      {justAdded && (
+        <p className="text-xs text-emerald-700 mt-3">
+          บันทึกแล้ว: {justAdded.employeeName} ได้รับ {justAdded.name} · กำหนดแจกครั้งถัดไป {formatThaiDate(justAdded.expiry)}
+        </p>
+      )}
+    </Card>
   );
 }
 
-function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem }) {
+function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem }) {
   const [showCatalogForm, setShowCatalogForm] = useState(false);
-  const [catalogForm, setCatalogForm] = useState({ name: "", model: "", standard: "", lifespanDays: "180" });
+  const [catalogForm, setCatalogForm] = useState({ name: "", standard: "", lifespanDays: "180" });
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ model: "", standard: "", lifespanDays: "" });
+  const [editForm, setEditForm] = useState({ standard: "", lifespanDays: "" });
 
   const submitCatalog = () => {
     if (!catalogForm.name.trim()) return;
     onAddCatalogItem({
       id: Date.now(),
       name: catalogForm.name,
-      model: catalogForm.model || "-",
       standard: catalogForm.standard || "-",
       lifespanDays: Number(catalogForm.lifespanDays) || 180,
     });
-    setCatalogForm({ name: "", model: "", standard: "", lifespanDays: "180" });
+    setCatalogForm({ name: "", standard: "", lifespanDays: "180" });
     setShowCatalogForm(false);
   };
 
   const startEdit = (c) => {
     setEditingId(c.id);
-    setEditForm({ model: c.model || "", standard: c.standard, lifespanDays: String(c.lifespanDays) });
+    setEditForm({ standard: c.standard, lifespanDays: String(c.lifespanDays) });
   };
 
   const saveEdit = (id) => {
     onUpdateCatalogItem(id, {
-      model: editForm.model || "-",
       standard: editForm.standard || "-",
       lifespanDays: Number(editForm.lifespanDays) || 1,
     });
@@ -1895,7 +1264,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
   return (
     <Card className="max-w-2xl">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-semibold text-slate-900">ประเภท/รุ่นอุปกรณ์ในระบบ</p>
+        <p className="text-sm font-medium text-slate-900">ประเภท/รุ่นอุปกรณ์ในระบบ</p>
         <button
           onClick={() => setShowCatalogForm(true)}
           className="flex items-center gap-1.5 text-xs text-slate-600 underline hover:text-slate-900"
@@ -1906,7 +1275,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
 
       {showCatalogForm && (
         <div className="border border-slate-200 rounded-lg p-3 mb-3 space-y-3">
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid sm:grid-cols-3 gap-3">
             <div>
               <label className="text-xs text-slate-500 block mb-1">ชื่อประเภทอุปกรณ์</label>
               <input
@@ -1916,17 +1285,6 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
               />
             </div>
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">ชื่อรุ่น</label>
-              <input
-                value={catalogForm.model}
-                onChange={(e) => setCatalogForm({ ...catalogForm, model: e.target.value })}
-                placeholder="เช่น 3M 1110"
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-500 block mb-1">มาตรฐานอ้างอิง</label>
               <input
@@ -1962,10 +1320,8 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
         <thead>
           <tr className="text-slate-500 text-left">
             <th className="py-1.5 font-medium">ชื่อประเภทอุปกรณ์</th>
-            <th className="py-1.5 font-medium">ชื่อรุ่น</th>
             <th className="py-1.5 font-medium">มาตรฐาน</th>
             <th className="py-1.5 font-medium">อายุการใช้งาน</th>
-            <th className="py-1.5"></th>
             <th className="py-1.5"></th>
           </tr>
         </thead>
@@ -1977,13 +1333,6 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
                 <td className="py-1.5">{c.name}</td>
                 {isEditing ? (
                   <>
-                    <td className="py-1.5 pr-2">
-                      <input
-                        value={editForm.model}
-                        onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                      />
-                    </td>
                     <td className="py-1.5 pr-2">
                       <input
                         value={editForm.standard}
@@ -2008,20 +1357,15 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
                         <button onClick={() => setEditingId(null)} className="text-xs text-slate-400 underline">ยกเลิก</button>
                       </div>
                     </td>
-                    <td className="py-1.5"></td>
                   </>
                 ) : (
                   <>
-                    <td className="py-1.5 text-slate-500">{c.model || "-"}</td>
                     <td className="py-1.5 text-slate-500">{c.standard}</td>
                     <td className="py-1.5 text-slate-500">{c.lifespanDays} วัน</td>
                     <td className="py-1.5">
                       <button onClick={() => startEdit(c)} className="text-xs text-slate-500 underline hover:text-slate-800">
                         แก้ไข
                       </button>
-                    </td>
-                    <td className="py-1.5">
-                      <ConfirmDeleteButton onConfirm={() => onDeleteCatalogItem(c.id)} />
                     </td>
                   </>
                 )}
@@ -2039,12 +1383,12 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
   );
 }
 
-function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem }) {
+function PpePage({ employees, ppe, noncompliance, catalog, onAddNoncompliance, onAddIssuance, onAddCatalogItem, onUpdateCatalogItem }) {
   const [tab, setTab] = useState("item");
   const tabs = [
     { key: "item", label: "รายงานสถานะ PPE" },
-    { key: "issuance", label: "บันทึกการเบิก PPE" },
-    { key: "catalog", label: "ประเภท/รุ่นอุปกรณ์" },
+    { key: "issuance", label: "บันทึกการรับมอบ" },
+    { key: "noncompliance", label: "ไม่ปฏิบัติตาม" },
   ];
 
   return (
@@ -2066,23 +1410,12 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
       </div>
 
       {tab === "item" && <PpeByItemView employees={employees} ppe={ppe} />}
-      {tab === "issuance" && <PpeIssuanceView employees={employees} ppe={ppe} catalog={catalog} onAddIssuance={onAddIssuance} onDeleteIssuance={onDeleteIssuance} />}
-      {tab === "catalog" && (
-        <PpeCatalogView catalog={catalog} onAddCatalogItem={onAddCatalogItem} onUpdateCatalogItem={onUpdateCatalogItem} onDeleteCatalogItem={onDeleteCatalogItem} />
+      {tab === "issuance" && <PpeIssuanceView employees={employees} catalog={catalog} onAddIssuance={onAddIssuance} />}
+      {tab === "noncompliance" && (
+        <NoncomplianceView employees={employees} records={noncompliance} onAdd={onAddNoncompliance} />
       )}
-    </div>
-  );
-}
 
-// ---------------------------------------------------------------
-// Unsafe acts (การกระทำที่ไม่ปลอดภัย) — เดิมเป็นแท็บในหน้า PPE ย้ายมาเป็นเมนูหลักแยก
-// ---------------------------------------------------------------
-
-function UnsafeActsPage({ employees, records, onAdd, onDelete }) {
-  return (
-    <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">บันทึกการกระทำที่ไม่ปลอดภัย</h1>
-      <NoncomplianceView employees={employees} records={records} onAdd={onAdd} onDelete={onDelete} />
+      <PpeCatalogView catalog={catalog} onAddCatalogItem={onAddCatalogItem} onUpdateCatalogItem={onUpdateCatalogItem} />
     </div>
   );
 }
@@ -2091,7 +1424,7 @@ function UnsafeActsPage({ employees, records, onAdd, onDelete }) {
 // Safety equipment registry + inspection history
 // ---------------------------------------------------------------
 
-function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteInspection, onDeleteEquipment }) {
+function EquipmentPage({ equipment, onAddInspection, onAddEquipment }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ result: "ผ่าน", findings: "", action: "", correctiveDeadline: "" });
@@ -2154,7 +1487,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
         )}
 
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-900">ประวัติการตรวจสภาพ</p>
+          <p className="text-sm font-medium text-slate-900">ประวัติการตรวจสภาพ</p>
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
@@ -2166,7 +1499,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
         {showForm && (
           <Card>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-sm font-medium text-slate-900">
                 {isFollowUpNow ? "บันทึกผลตรวจซ้ำนอกรอบ" : "บันทึกผลตรวจใหม่"}
               </p>
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
@@ -2255,10 +1588,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
                       <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-700 px-2 py-0.5 rounded">ตรวจพิเศษนอกรอบ</span>
                     )}
                   </p>
-                  <div className="flex items-center gap-2">
-                    <Badge tone={statusTone(h.result)}>{h.result}</Badge>
-                    <ConfirmDeleteButton onConfirm={() => onDeleteInspection(selected.id, i)} />
-                  </div>
+                  <Badge tone={statusTone(h.result)}>{h.result}</Badge>
                 </div>
                 <p className="text-sm text-slate-500 mt-1.5">พบ: {h.findings}</p>
                 <p className="text-sm text-slate-700 mt-1">ดำเนินการ: {h.action}</p>
@@ -2288,7 +1618,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
       {showAddForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">เพิ่มอุปกรณ์ใหม่</p>
+            <p className="text-sm font-medium text-slate-900">เพิ่มอุปกรณ์ใหม่</p>
             <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -2393,7 +1723,6 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               <th className="px-4 py-2.5 font-medium">กำหนดถัดไป</th>
               <th className="px-4 py-2.5 font-medium">สถานะ</th>
               <th className="px-4 py-2.5"></th>
-              <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
@@ -2415,9 +1744,6 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
                 </td>
                 <td className="px-4 py-2.5"><Badge tone={statusTone(eq.status)}>{eq.status}</Badge></td>
                 <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
-                <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                  <ConfirmDeleteButton onConfirm={() => onDeleteEquipment(eq.id)} />
-                </td>
               </tr>
             ))}
           </tbody>
@@ -2667,7 +1993,7 @@ function ChecklistPage() {
         {approved && (
           <div className="space-y-3">
             <div className="bg-slate-50 rounded-lg p-4 border border-slate-100 text-sm text-slate-700 space-y-1">
-              <p className="font-semibold text-slate-900 mb-1">สรุปสำหรับพิมพ์ประกอบใบอนุญาตเข้าทำงาน</p>
+              <p className="font-medium text-slate-900 mb-1">สรุปสำหรับพิมพ์ประกอบใบอนุญาตเข้าทำงาน</p>
               <p>โครงการ: {header.projectName || "-"}</p>
               <p>สถานที่: {header.location || "-"}</p>
               <p>ประเภทงาน: {header.workType}</p>
@@ -2693,17 +2019,13 @@ function ChecklistPage() {
 // Employees registry
 // ---------------------------------------------------------------
 
-function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecords, trainingCourses, onBack }) {
+function EmployeeDetail({ employee, ppe, noncompliance, incidents, onBack }) {
   const employeePpe = ppe.filter((p) => p.employeeId === employee.id);
   const employeeNoncompliance = noncompliance.filter((r) => r.employeeId === employee.id);
   const employeeIncidents = incidents
     .filter((inc) => inc.injuredEmployees.some((e) => e.employeeId === employee.id))
     .map((inc) => ({ ...inc, myInjury: inc.injuredEmployees.find((e) => e.employeeId === employee.id) }))
     .sort((a, b) => (a.incidentDate < b.incidentDate ? 1 : -1));
-  const employeeTrainings = trainingRecords
-    .filter((r) => r.employeeId === employee.id)
-    .sort((a, b) => (a.completionDate < b.completionDate ? 1 : -1));
-  const courseName = (id) => trainingCourses.find((c) => c.id === id)?.name ?? "-";
 
   return (
     <div className="space-y-5">
@@ -2712,12 +2034,12 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
       </button>
 
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">{employee.name} <span className="text-slate-400 font-normal text-base">· {employee.code || "-"}</span></h1>
+        <h1 className="text-lg font-semibold text-slate-900">{employee.name}</h1>
         <p className="text-sm text-slate-500 mt-0.5">{employee.position} · {employee.department}</p>
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติรับมอบ PPE</p>
+        <p className="text-sm font-medium text-slate-900 mb-3">ประวัติรับมอบ PPE</p>
         {employeePpe.length === 0 ? (
           <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติรับมอบ PPE</p></Card>
         ) : (
@@ -2758,42 +2080,7 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติการอบรม</p>
-        {employeeTrainings.length === 0 ? (
-          <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติการอบรม</p></Card>
-        ) : (
-          <Card className="p-0 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">หลักสูตร</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่อบรมผ่าน</th>
-                    <th className="px-4 py-2.5 font-medium">วันหมดอายุ</th>
-                    <th className="px-4 py-2.5 font-medium">สถานะ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {employeeTrainings.map((t) => {
-                    const status = getTrainingComplianceStatus(employee.id, t.courseId, trainingRecords);
-                    return (
-                      <tr key={t.id} className="border-t border-slate-100">
-                        <td className="px-4 py-2.5">{courseName(t.courseId)}</td>
-                        <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(t.completionDate)}</td>
-                        <td className="px-4 py-2.5 text-slate-500">{t.expiryDate ? formatThaiDate(t.expiryDate) : "ไม่มีวันหมดอายุ"}</td>
-                        <td className="px-4 py-2.5"><Badge tone={trainingStatusTone(status)}>{trainingStatusLabel[status]}</Badge></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-      </div>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติไม่ปฏิบัติตาม</p>
+        <p className="text-sm font-medium text-slate-900 mb-3">ประวัติไม่ปฏิบัติตาม</p>
         {employeeNoncompliance.length === 0 ? (
           <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติไม่ปฏิบัติตาม</p></Card>
         ) : (
@@ -2813,7 +2100,7 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
                     <tr key={r.id} className="border-t border-slate-100">
                       <td className="px-4 py-2.5">{r.ppeName}</td>
                       <td className="px-4 py-2.5 text-slate-500">{r.location}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(r.date)}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{r.date}</td>
                       <td className="px-4 py-2.5">
                         <Badge tone={r.action === "ให้หยุดงาน" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}>{r.action}</Badge>
                       </td>
@@ -2827,7 +2114,7 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติอุบัติเหตุ</p>
+        <p className="text-sm font-medium text-slate-900 mb-3">ประวัติอุบัติเหตุ</p>
         {employeeIncidents.length === 0 ? (
           <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติอุบัติเหตุ</p></Card>
         ) : (
@@ -2869,132 +2156,16 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
   );
 }
 
-function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, trainingRecords, trainingCourses, employeeLimit, onAdd, onAddMany, onDelete, onUpdate }) {
+function EmployeesPage({ employees, ppe, noncompliance, incidents, onAdd }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
-  const [form, setForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
-  const [importMessage, setImportMessage] = useState(null);
-  const fileInputRef = useRef(null);
-
-  const atLimit = employeeLimit != null && employees.length >= employeeLimit;
-  const locationName = (id) => locations.find((l) => l.id === id)?.name ?? "ยังไม่ระบุ";
+  const [form, setForm] = useState({ name: "", position: "", department: "" });
 
   const submit = () => {
     if (!form.name.trim()) return;
-    if (atLimit) {
-      setImportMessage({ type: "error", text: `แพ็กเกจปัจจุบันบันทึกพนักงานได้สูงสุด ${employeeLimit} คน กรุณาอัปเกรดแพ็กเกจเพื่อเพิ่มจำนวน` });
-      return;
-    }
-    onAdd({
-      id: Date.now(),
-      code: form.code || "-",
-      name: form.name,
-      position: form.position || "-",
-      department: form.department || "-",
-      primaryLocationId: form.primaryLocationId || null,
-    });
-    setForm({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
+    onAdd({ id: Date.now(), name: form.name, position: form.position || "-", department: form.department || "-" });
+    setForm({ name: "", position: "", department: "" });
     setShowForm(false);
-  };
-
-  const startEdit = (emp) => {
-    setEditingId(emp.id);
-    setEditForm({
-      code: emp.code || "",
-      name: emp.name,
-      position: emp.position || "",
-      department: emp.department || "",
-      primaryLocationId: emp.primaryLocationId != null ? String(emp.primaryLocationId) : "",
-    });
-  };
-
-  const saveEdit = () => {
-    if (!editForm.name.trim()) return;
-    onUpdate(editingId, {
-      code: editForm.code || "-",
-      name: editForm.name,
-      position: editForm.position || "-",
-      department: editForm.department || "-",
-      primaryLocationId: editForm.primaryLocationId || null,
-    });
-    setEditingId(null);
-  };
-
-  const handleImportClick = () => {
-    if (atLimit) {
-      setImportMessage({ type: "error", text: `แพ็กเกจปัจจุบันบันทึกพนักงานได้สูงสุด ${employeeLimit} คน กรุณาอัปเกรดแพ็กเกจเพื่อนำเข้าเพิ่ม` });
-      return;
-    }
-    fileInputRef.current?.click();
-  };
-
-  const handleDownloadTemplate = async () => {
-    const XLSX = await import("xlsx");
-    const templateData = [
-      { "รหัสพนักงาน": "EMP-004", "ชื่อ-สกุล": "สมหญิง รักงาน", "ตำแหน่ง": "ช่างเทคนิค", "แผนก": "ซ่อมบำรุง" },
-      { "รหัสพนักงาน": "EMP-005", "ชื่อ-สกุล": "สมชาย มั่นคง", "ตำแหน่ง": "พนักงานคลังสินค้า", "แผนก": "คลังสินค้า" },
-    ];
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    worksheet["!cols"] = [{ wch: 16 }, { wch: 24 }, { wch: 22 }, { wch: 18 }];
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "พนักงาน");
-    XLSX.writeFile(workbook, "template_นำเข้าพนักงาน.xlsx");
-  };
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const XLSX = await import("xlsx");
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet);
-
-      const getField = (row, keys) => {
-        for (const k of keys) {
-          if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== "") return String(row[k]).trim();
-        }
-        return "";
-      };
-
-      const newEmployees = rows
-        .map((row) => ({
-          id: Date.now() + Math.random(),
-          code: getField(row, ["รหัสพนักงาน", "รหัส", "code", "Code"]) || "-",
-          name: getField(row, ["ชื่อ-สกุล", "ชื่อ", "name", "Name"]),
-          position: getField(row, ["ตำแหน่ง", "position", "Position"]) || "-",
-          department: getField(row, ["แผนก", "หน่วยงาน", "department", "Department"]) || "-",
-        }))
-        .filter((r) => r.name);
-
-      if (newEmployees.length === 0) {
-        setImportMessage({ type: "error", text: "ไม่พบข้อมูลที่นำเข้าได้ ตรวจสอบว่ามีคอลัมน์ 'ชื่อ-สกุล' หรือไม่" });
-      } else if (employeeLimit != null) {
-        const remaining = Math.max(0, employeeLimit - employees.length);
-        if (remaining === 0) {
-          setImportMessage({ type: "error", text: `แพ็กเกจปัจจุบันบันทึกพนักงานได้สูงสุด ${employeeLimit} คน ไม่สามารถนำเข้าเพิ่มได้` });
-        } else {
-          const toImport = newEmployees.slice(0, remaining);
-          onAddMany(toImport);
-          const skipped = newEmployees.length - toImport.length;
-          setImportMessage({
-            type: skipped > 0 ? "error" : "success",
-            text: skipped > 0
-              ? `นำเข้าได้ ${toImport.length} คน (ข้าม ${skipped} คน เพราะเกินโควตาสูงสุด ${employeeLimit} คนของแพ็กเกจปัจจุบัน)`
-              : `นำเข้าพนักงานสำเร็จ ${toImport.length} คน`,
-          });
-        }
-      } else {
-        onAddMany(newEmployees);
-        setImportMessage({ type: "success", text: `นำเข้าพนักงานสำเร็จ ${newEmployees.length} คน` });
-      }
-    } catch (err) {
-      setImportMessage({ type: "error", text: "อ่านไฟล์ไม่สำเร็จ ตรวจสอบว่าเป็นไฟล์ .xlsx หรือ .csv ที่ถูกต้อง" });
-    }
-    e.target.value = "";
   };
 
   const selected = employees.find((e) => e.id === selectedId);
@@ -3005,8 +2176,6 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
         ppe={ppe}
         noncompliance={noncompliance}
         incidents={incidents}
-        trainingRecords={trainingRecords}
-        trainingCourses={trainingCourses}
         onBack={() => setSelectedId(null)}
       />
     );
@@ -3014,71 +2183,25 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-900">ทะเบียนพนักงาน</h1>
-        <div className="flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <button
-            onClick={handleDownloadTemplate}
-            className="text-sm text-slate-500 underline hover:text-slate-700"
-          >
-            ดาวน์โหลด Template
-          </button>
-          <button
-            onClick={handleImportClick}
-            className="flex items-center gap-1.5 text-sm border border-slate-300 text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-50"
-          >
-            นำเข้าจาก Excel
-          </button>
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
-          >
-            <Plus size={16} /> เพิ่มพนักงาน
-          </button>
-        </div>
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
+        >
+          <Plus size={16} /> เพิ่มพนักงาน
+        </button>
       </div>
-      <p className="text-xs text-slate-400 -mt-3">
-        ไฟล์ต้องมีคอลัมน์ "ชื่อ-สกุล" (บังคับ), "รหัสพนักงาน", "ตำแหน่ง" และ "แผนก" — ดาวน์โหลด Template ด้านบนเพื่อดูตัวอย่าง
-      </p>
-
-      {employeeLimit != null && (
-        <div className={`text-sm px-3 py-2 rounded-lg ${atLimit ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-600"}`}>
-          บันทึกพนักงานแล้ว {employees.length} / {employeeLimit} คน (ตามแพ็กเกจปัจจุบัน)
-          {atLimit && " — ครบโควตาสูงสุดแล้ว กรุณาอัปเกรดแพ็กเกจเพื่อเพิ่มจำนวน"}
-        </div>
-      )}
-
-      {importMessage && (
-        <div className={`text-sm px-3 py-2 rounded-lg ${importMessage.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-          {importMessage.text}
-        </div>
-      )}
 
       {showForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">เพิ่มพนักงานใหม่</p>
+            <p className="text-sm font-medium text-slate-900">เพิ่มพนักงานใหม่</p>
             <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
           </div>
-          <div className="grid sm:grid-cols-4 gap-3 mb-4">
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">รหัสพนักงาน</label>
-              <input
-                value={form.code}
-                onChange={(e) => setForm({ ...form, code: e.target.value })}
-                placeholder="เช่น EMP-004"
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              />
-            </div>
+          <div className="grid sm:grid-cols-3 gap-3 mb-4">
             <div>
               <label className="text-xs text-slate-500 block mb-1">ชื่อ-สกุล</label>
               <input
@@ -3106,17 +2229,6 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
               />
             </div>
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">สถานที่ประจำ</label>
-              <select
-                value={form.primaryLocationId}
-                onChange={(e) => setForm({ ...form, primaryLocationId: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              >
-                <option value="">ยังไม่ระบุ</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
@@ -3134,95 +2246,27 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-left">
-              <th className="px-4 py-2.5 font-medium">รหัสพนักงาน</th>
               <th className="px-4 py-2.5 font-medium">ชื่อ-สกุล</th>
               <th className="px-4 py-2.5 font-medium">ตำแหน่ง</th>
               <th className="px-4 py-2.5 font-medium">แผนก</th>
-              <th className="px-4 py-2.5 font-medium">สถานที่ประจำ</th>
               <th className="px-4 py-2.5 font-medium">PPE ที่ถือครอง</th>
-              <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
-            {employees.map((emp) => {
-              const isEditing = editingId === emp.id;
-              if (isEditing) {
-                return (
-                  <tr key={emp.id} className="border-t border-slate-100 bg-slate-50">
-                    <td className="px-4 py-2">
-                      <input
-                        value={editForm.code}
-                        onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        value={editForm.name}
-                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        value={editForm.position}
-                        onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        value={editForm.department}
-                        onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <select
-                        value={editForm.primaryLocationId}
-                        onChange={(e) => setEditForm({ ...editForm, primaryLocationId: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                      >
-                        <option value="">ยังไม่ระบุ</option>
-                        {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2 text-slate-400">-</td>
-                    <td className="px-4 py-2" colSpan={2}>
-                      <div className="flex gap-2 justify-end">
-                        <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 underline">ยกเลิก</button>
-                        <button onClick={saveEdit} className="text-xs bg-slate-900 text-white px-2 py-1 rounded-lg">บันทึก</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              }
-              return (
-                <tr
-                  key={emp.id}
-                  onClick={() => setSelectedId(emp.id)}
-                  className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
-                >
-                  <td className="px-4 py-2.5 text-slate-500">{emp.code || "-"}</td>
-                  <td className="px-4 py-2.5">{emp.name}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{emp.position}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{emp.department}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{locationName(emp.primaryLocationId)}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{ppe.filter((p) => p.employeeId === emp.id).length} รายการ</td>
-                  <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => startEdit(emp)} className="text-xs text-slate-500 underline hover:text-slate-800">
-                      แก้ไข
-                    </button>
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span onClick={(e) => e.stopPropagation()}>
-                      <ConfirmDeleteButton onConfirm={() => onDelete(emp.id)} />
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
+            {employees.map((emp) => (
+              <tr
+                key={emp.id}
+                onClick={() => setSelectedId(emp.id)}
+                className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
+              >
+                <td className="px-4 py-2.5">{emp.name}</td>
+                <td className="px-4 py-2.5 text-slate-500">{emp.position}</td>
+                <td className="px-4 py-2.5 text-slate-500">{emp.department}</td>
+                <td className="px-4 py-2.5 text-slate-500">{ppe.filter((p) => p.employeeId === emp.id).length} รายการ</td>
+                <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
+              </tr>
+            ))}
           </tbody>
         </table>
         </div>
@@ -3238,311 +2282,8 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
 const hazardOptions = Object.keys(hazardTypeLabel);
 const riskLevelOptions = ["low", "medium", "high", "critical"];
 
-function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
-  const isEditMode = !!initialRecord;
-  const [shared, setShared] = useState(
-    initialRecord
-      ? {
-          measurementType: initialRecord.measurementType, unit: initialRecord.unit,
-          standardLimit: initialRecord.standardLimit ?? "", measuredAt: initialRecord.measuredAt,
-          nextDue: initialRecord.nextDue || "", notes: initialRecord.notes === "-" ? "" : initialRecord.notes || "",
-        }
-      : { measurementType: measurementTypeOptions[0], unit: "", standardLimit: "", measuredAt: todayIso(), nextDue: "", notes: "" }
-  );
-  const [points, setPoints] = useState(
-    initialRecord
-      ? initialRecord.points.map((p, i) => ({ id: i + 1, label: p.label, value: String(p.value), result: p.result }))
-      : [{ id: 1, label: "จุดที่ 1", value: "", result: "pass" }]
-  );
-  const [planFile, setPlanFile] = useState(
-    initialRecord?.planFileUrl ? { name: initialRecord.planFileName, dataUrl: initialRecord.planFileUrl } : null
-  );
-  const planInputRef = useRef(null);
-
-  const addPoint = () => setPoints([...points, { id: Date.now(), label: `จุดที่ ${points.length + 1}`, value: "", result: "pass" }]);
-  const removePoint = (id) => setPoints(points.filter((p) => p.id !== id));
-  const updatePoint = (id, field, value) => setPoints(points.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
-
-  const handlePlanFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPlanFile({ name: file.name, dataUrl: reader.result });
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
-
-  const submit = () => {
-    const validPoints = points.filter((p) => p.label.trim() && p.value !== "");
-    if (validPoints.length === 0 || !shared.unit) return;
-    const failCount = validPoints.filter((p) => p.result === "fail").length;
-    onSubmit({
-      measurementType: shared.measurementType,
-      unit: shared.unit,
-      standardLimit: shared.standardLimit === "" ? null : Number(shared.standardLimit),
-      measuredAt: shared.measuredAt,
-      nextDue: shared.nextDue || null,
-      notes: shared.notes || "-",
-      planFileName: planFile?.name || null,
-      planFileUrl: planFile?.dataUrl || null,
-      points: validPoints.map((p) => ({ label: p.label, value: Number(p.value), result: p.result })),
-      failCount,
-      result: failCount > 0 ? "fail" : "pass",
-    });
-  };
-
-  return (
-    <Card className="mb-4">
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-semibold text-slate-900">{isEditMode ? "แก้ไขผลตรวจวัด" : "บันทึกผลตรวจวัดใหม่"}</p>
-        <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
-          <X size={18} />
-        </button>
-      </div>
-
-      <div className="grid sm:grid-cols-3 gap-3 mb-3">
-        <div>
-          <label className="text-xs text-slate-500 block mb-1">ประเภทการตรวจวัด</label>
-          <select
-            value={shared.measurementType}
-            onChange={(e) => setShared({ ...shared, measurementType: e.target.value })}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          >
-            {measurementTypeOptions.map((t) => <option key={t} value={t}>{measurementTypeLabel[t]}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-slate-500 block mb-1">หน่วย</label>
-          <input
-            value={shared.unit}
-            onChange={(e) => setShared({ ...shared, unit: e.target.value })}
-            placeholder="เช่น dB(A), ppm, lux"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-slate-500 block mb-1">ค่ามาตรฐาน (ถ้ามี)</label>
-          <input
-            type="number"
-            value={shared.standardLimit}
-            onChange={(e) => setShared({ ...shared, standardLimit: e.target.value })}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-3 mb-4">
-        <div>
-          <label className="text-xs text-slate-500 block mb-1">วันที่ตรวจวัด</label>
-          <input
-            type="date"
-            value={shared.measuredAt}
-            onChange={(e) => setShared({ ...shared, measuredAt: e.target.value })}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-slate-500 block mb-1">กำหนดตรวจรอบถัดไป</label>
-          <input
-            type="date"
-            value={shared.nextDue}
-            onChange={(e) => setShared({ ...shared, nextDue: e.target.value })}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs text-slate-500">จุดย่อยที่เข้าไปตรวจวัด</label>
-          <button onClick={addPoint} className="flex items-center gap-1 text-xs text-slate-600 underline hover:text-slate-900">
-            <Plus size={13} /> เพิ่มจุดย่อย
-          </button>
-        </div>
-        <div className="space-y-2">
-          {points.map((p) => (
-            <div key={p.id} className="flex flex-wrap items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
-              <input
-                value={p.label}
-                onChange={(e) => updatePoint(p.id, "label", e.target.value)}
-                placeholder="ชื่อจุดย่อย เช่น จุดที่ 1 ใกล้เครื่องจักร A"
-                className="flex-1 min-w-[10rem] border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-              />
-              <input
-                type="number"
-                value={p.value}
-                onChange={(e) => updatePoint(p.id, "value", e.target.value)}
-                placeholder="ค่าที่วัดได้"
-                className="w-28 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-              />
-              <div className="flex gap-1">
-                <button
-                  onClick={() => updatePoint(p.id, "result", "pass")}
-                  className={`text-xs px-2 py-1 rounded-lg border ${p.result === "pass" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "border-slate-300 text-slate-500"}`}
-                >
-                  ผ่าน
-                </button>
-                <button
-                  onClick={() => updatePoint(p.id, "result", "fail")}
-                  className={`text-xs px-2 py-1 rounded-lg border ${p.result === "fail" ? "bg-red-50 text-red-700 border-red-200" : "border-slate-300 text-slate-500"}`}
-                >
-                  ไม่ผ่าน
-                </button>
-              </div>
-              {points.length > 1 && (
-                <button onClick={() => removePoint(p.id)} className="text-xs text-slate-400 underline hover:text-red-600">
-                  ลบ
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <label className="text-xs text-slate-500 block mb-1">แผนผังตำแหน่งจุดย่อย (ถ้ามี)</label>
-        <input ref={planInputRef} type="file" accept="image/*,.pdf" onChange={handlePlanFileChange} className="hidden" />
-        {planFile ? (
-          <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-sm">
-            <span className="text-slate-700 truncate">{planFile.name}</span>
-            <div className="flex gap-2">
-              <button onClick={() => planInputRef.current?.click()} className="text-xs text-slate-500 underline">เปลี่ยนไฟล์</button>
-              <button onClick={() => setPlanFile(null)} className="text-xs text-red-600 underline">ลบ</button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => planInputRef.current?.click()}
-            className="w-full border border-dashed border-slate-300 rounded-lg py-4 text-center text-slate-400 hover:border-slate-400 hover:text-slate-500 text-sm"
-          >
-            แตะเพื่อแนบไฟล์แผนผัง (รูปภาพหรือ PDF)
-          </button>
-        )}
-      </div>
-
-      <div className="mb-4">
-        <label className="text-xs text-slate-500 block mb-1">หมายเหตุ</label>
-        <textarea
-          rows={2}
-          value={shared.notes}
-          onChange={(e) => setShared({ ...shared, notes: e.target.value })}
-          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
-        />
-      </div>
-
-      <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
-          ยกเลิก
-        </button>
-        <button onClick={submit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-          {isEditMode ? "บันทึกการแก้ไข" : "บันทึก"}
-        </button>
-      </div>
-    </Card>
-  );
-}
-
-function MeasurementRecordCard({ record, showLocationName, locationName, onEdit, onDelete, onUpdateStatus }) {
-  const totalPoints = record.points?.length || 0;
-  const failCount = record.failCount ?? (record.points || []).filter((p) => p.result === "fail").length;
-  return (
-    <Card>
-      <div className="flex items-start justify-between mb-2 flex-wrap gap-2">
-        <div>
-          {showLocationName && <p className="text-sm font-semibold text-slate-900">{locationName}</p>}
-          <p className="text-sm text-slate-700">
-            {measurementTypeLabel[record.measurementType]}
-            {record.standardLimit != null && <span className="text-slate-400"> · มาตรฐาน {record.standardLimit} {record.unit}</span>}
-          </p>
-          <p className="text-xs text-slate-400 mt-0.5">
-            วัดเมื่อ {formatThaiDate(record.measuredAt)}
-            {record.nextDue && ` · รอบถัดไป ${formatThaiDate(record.nextDue)}`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {totalPoints === 0 ? (
-            <Badge tone={record.result === "pass" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}>
-              {record.result === "pass" ? "ผ่าน" : "ไม่ผ่าน"}
-            </Badge>
-          ) : failCount > 0 ? (
-            <Badge tone="bg-red-50 text-red-700">ไม่ผ่าน {failCount}/{totalPoints} จุด</Badge>
-          ) : (
-            <Badge tone="bg-emerald-50 text-emerald-700">ผ่านทั้งหมด ({totalPoints} จุด)</Badge>
-          )}
-          {onEdit && (
-            <button onClick={onEdit} className="text-xs text-slate-500 underline hover:text-slate-700">
-              แก้ไข
-            </button>
-          )}
-          {onDelete && <ConfirmDeleteButton onConfirm={onDelete} />}
-        </div>
-      </div>
-
-      {totalPoints > 0 && (
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-left">
-                <th className="px-3 py-1.5 font-medium">จุดย่อย</th>
-                <th className="px-3 py-1.5 font-medium">ค่าที่วัดได้</th>
-                <th className="px-3 py-1.5 font-medium">ผล</th>
-              </tr>
-            </thead>
-            <tbody>
-              {record.points.map((p, i) => (
-                <tr key={i} className="border-t border-slate-100">
-                  <td className="px-3 py-1.5">{p.label}</td>
-                  <td className="px-3 py-1.5 text-slate-500">{p.value} {record.unit}</td>
-                  <td className="px-3 py-1.5">
-                    <Badge tone={p.result === "pass" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}>
-                      {p.result === "pass" ? "ผ่าน" : "ไม่ผ่าน"}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {record.planFileUrl && (
-        <a
-          href={record.planFileUrl}
-          download={record.planFileName || "floor-plan"}
-          className="inline-flex items-center gap-1 text-xs text-slate-500 underline hover:text-slate-700 mt-3"
-        >
-          📎 ดูไฟล์แผนผัง: {record.planFileName}
-        </a>
-      )}
-
-      {record.notes && record.notes !== "-" && (
-        <p className="text-xs text-slate-500 mt-3">หมายเหตุ: {record.notes}</p>
-      )}
-
-      {failCount > 0 && onUpdateStatus && (
-        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
-          <label className="text-xs text-slate-500">สถานะการแก้ไขปัจจุบัน:</label>
-          <select
-            value={record.correctionStatus || "none"}
-            onChange={(e) => onUpdateStatus(e.target.value)}
-            className="border border-slate-300 rounded-lg px-2 py-1 text-xs"
-          >
-            {correctionStatusOptions.map((s) => <option key={s} value={s}>{correctionStatusLabel[s]}</option>)}
-          </select>
-          <Badge tone={correctionStatusTone(record.correctionStatus || "none")}>
-            {correctionStatusLabel[record.correctionStatus || "none"]}
-          </Badge>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function LocationDetail({ location, incidents, measurements, onBack, onUpdate, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement }) {
+function LocationDetail({ location, incidents, onBack, onUpdate }) {
   const [editingAssessment, setEditingAssessment] = useState(false);
-  const [showMeasurementForm, setShowMeasurementForm] = useState(false);
-  const [editingMeasurementId, setEditingMeasurementId] = useState(null);
-  const photoInputRef = useRef(null);
   const [form, setForm] = useState({
     riskLevel: location.riskAssessment.riskLevel,
     findings: location.riskAssessment.findings,
@@ -3551,27 +2292,10 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
     hazards: location.hazards,
   });
 
-  const handlePhotoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      onUpdate(location.id, { photoUrl: reader.result });
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
-
-  const removePhoto = () => onUpdate(location.id, { photoUrl: null });
-
   // ดึงจากข้อมูลจริงในหน้าอุบัติเหตุ (ไม่ใช่ข้อมูลแยกต่างหาก) — กรองด้วยชื่อสถานที่ตรงกัน
   const locationIncidents = incidents
     .filter((i) => i.location === location.name)
     .sort((a, b) => (a.incidentDate < b.incidentDate ? 1 : -1));
-
-  const locationMeasurements = measurements
-    .filter((m) => m.locationId === location.id)
-    .sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
 
   const startEdit = () => {
     setForm({
@@ -3626,49 +2350,8 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ภาพสถานที่</p>
-        <Card>
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handlePhotoChange}
-            className="hidden"
-          />
-          {location.photoUrl ? (
-            <div className="space-y-3">
-              <img
-                src={location.photoUrl}
-                alt={`ภาพสถานที่ ${location.name}`}
-                className="w-full max-h-80 object-cover rounded-lg border border-slate-200"
-              />
-              <div className="flex justify-end gap-2">
-                <button onClick={removePhoto} className="text-xs text-red-600 underline hover:text-red-700">
-                  ลบภาพ
-                </button>
-                <button
-                  onClick={() => photoInputRef.current?.click()}
-                  className="text-xs text-slate-500 underline hover:text-slate-700"
-                >
-                  เปลี่ยนภาพ
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => photoInputRef.current?.click()}
-              className="w-full border border-dashed border-slate-300 rounded-lg py-8 text-center text-slate-400 hover:border-slate-400 hover:text-slate-500"
-            >
-              <Camera size={22} className="mx-auto mb-2" />
-              <span className="text-sm">แตะเพื่ออัปโหลดภาพสถานที่</span>
-            </button>
-          )}
-        </Card>
-      </div>
-
-      <div>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-slate-900">การประเมินความเสี่ยง</p>
+          <p className="text-sm font-medium text-slate-900">การประเมินความเสี่ยง</p>
           {!editingAssessment && (
             <button onClick={startEdit} className="text-xs text-slate-500 underline hover:text-slate-700">
               แก้ไข
@@ -3774,7 +2457,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">
+        <p className="text-sm font-medium text-slate-900 mb-3">
           ประวัติอุบัติเหตุในพื้นที่ <span className="text-xs font-normal text-slate-400">(ดึงจากทะเบียนอุบัติเหตุอัตโนมัติ)</span>
         </p>
         {locationIncidents.length === 0 ? (
@@ -3815,62 +2498,11 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
         )}
         <p className="text-xs text-slate-400 mt-2">ดูรายละเอียด/แก้ไขแต่ละรายการได้ที่หน้า "อุบัติเหตุ"</p>
       </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-slate-900">ผลการตรวจวัดสิ่งแวดล้อม</p>
-          <button
-            onClick={() => setShowMeasurementForm(true)}
-            className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
-          >
-            <Plus size={16} /> บันทึกผลตรวจวัด
-          </button>
-        </div>
-
-        {showMeasurementForm && (
-          <MeasurementSubForm
-            onCancel={() => setShowMeasurementForm(false)}
-            onSubmit={(data) => {
-              onAddMeasurement({ id: Date.now(), locationId: location.id, ...data });
-              setShowMeasurementForm(false);
-            }}
-          />
-        )}
-
-        {editingMeasurementId != null && (
-          <MeasurementSubForm
-            initialRecord={locationMeasurements.find((m) => m.id === editingMeasurementId)}
-            onCancel={() => setEditingMeasurementId(null)}
-            onSubmit={(data) => {
-              onUpdateMeasurement(editingMeasurementId, data);
-              setEditingMeasurementId(null);
-            }}
-          />
-        )}
-
-        {locationMeasurements.length === 0 ? (
-          <Card>
-            <p className="text-sm text-slate-400">ยังไม่มีผลตรวจวัดสิ่งแวดล้อมของสถานที่นี้</p>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {locationMeasurements.map((m) => (
-              <MeasurementRecordCard
-                key={m.id}
-                record={m}
-                onEdit={() => setEditingMeasurementId(m.id)}
-                onDelete={() => onDeleteMeasurement(m.id)}
-                onUpdateStatus={(status) => onUpdateMeasurement(m.id, { correctionStatus: status })}
-              />
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
 
-function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, onDelete, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement }) {
+function LocationsPage({ locations, incidents, onAdd, onUpdate }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", building: "", description: "", riskLevel: "low", hazards: [] });
@@ -3881,12 +2513,8 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
       <LocationDetail
         location={selected}
         incidents={incidents}
-        measurements={measurements}
         onBack={() => setSelectedId(null)}
         onUpdate={onUpdate}
-        onAddMeasurement={onAddMeasurement}
-        onUpdateMeasurement={onUpdateMeasurement}
-        onDeleteMeasurement={onDeleteMeasurement}
       />
     );
   }
@@ -3931,7 +2559,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
       {showForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">เพิ่มสถานที่ทำงานใหม่</p>
+            <p className="text-sm font-medium text-slate-900">เพิ่มสถานที่ทำงานใหม่</p>
             <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -4018,47 +2646,29 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
               <th className="px-4 py-2.5 font-medium">อาคาร/โซน</th>
               <th className="px-4 py-2.5 font-medium">รูปแบบความเสี่ยง</th>
               <th className="px-4 py-2.5 font-medium">ระดับความเสี่ยง</th>
-              <th className="px-4 py-2.5 font-medium">ผลตรวจวัดสิ่งแวดล้อม</th>
-              <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
-            {locations.map((l) => {
-              const locationMeasurements = measurements.filter((m) => m.locationId === l.id);
-              const failCount = locationMeasurements.filter((m) => m.result === "fail").length;
-              return (
-                <tr
-                  key={l.id}
-                  onClick={() => setSelectedId(l.id)}
-                  className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
-                >
-                  <td className="px-4 py-2.5">{l.name}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{l.building}</td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1">
-                      {l.hazards.map((h) => (
-                        <span key={h} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{hazardTypeLabel[h]}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5"><Badge tone={riskLevelTone(l.riskLevel)}>{riskLevelLabel[l.riskLevel]}</Badge></td>
-                  <td className="px-4 py-2.5">
-                    {locationMeasurements.length === 0 ? (
-                      <span className="text-slate-400">ยังไม่มีข้อมูล</span>
-                    ) : failCount > 0 ? (
-                      <Badge tone="bg-red-50 text-red-700">ไม่ผ่าน {failCount} รายการ</Badge>
-                    ) : (
-                      <Badge tone="bg-emerald-50 text-emerald-700">ผ่านทั้งหมด ({locationMeasurements.length})</Badge>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
-                  <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                    <ConfirmDeleteButton onConfirm={() => onDelete(l.id)} />
-                  </td>
-                </tr>
-              );
-            })}
+            {locations.map((l) => (
+              <tr
+                key={l.id}
+                onClick={() => setSelectedId(l.id)}
+                className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
+              >
+                <td className="px-4 py-2.5">{l.name}</td>
+                <td className="px-4 py-2.5 text-slate-500">{l.building}</td>
+                <td className="px-4 py-2.5">
+                  <div className="flex flex-wrap gap-1">
+                    {l.hazards.map((h) => (
+                      <span key={h} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{hazardTypeLabel[h]}</span>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-2.5"><Badge tone={riskLevelTone(l.riskLevel)}>{riskLevelLabel[l.riskLevel]}</Badge></td>
+                <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
+              </tr>
+            ))}
           </tbody>
         </table>
         </div>
@@ -4068,1877 +2678,51 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
 }
 
 // ---------------------------------------------------------------
-// Environmental monitoring — บันทึกผลตรวจวัดสิ่งแวดล้อม ผูกกับสถานที่
-// ---------------------------------------------------------------
-
-function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateMeasurement, onDeleteMeasurement }) {
-  const [showForm, setShowForm] = useState(false);
-  const [locationId, setLocationId] = useState(locations[0]?.id ?? "");
-  const [editingId, setEditingId] = useState(null);
-
-  const locationName = (id) => locations.find((l) => l.id === id)?.name ?? "-";
-
-  // จัดกลุ่มตามประเภทการตรวจวัดก่อน แล้วค่อยแยกตามสถานที่ภายในแต่ละประเภท
-  const grouped = {};
-  measurements.forEach((m) => {
-    if (!grouped[m.measurementType]) grouped[m.measurementType] = {};
-    if (!grouped[m.measurementType][m.locationId]) grouped[m.measurementType][m.locationId] = [];
-    grouped[m.measurementType][m.locationId].push(m);
-  });
-  const typesPresent = measurementTypeOptions.filter((t) => grouped[t]);
-
-  const editingRecord = editingId != null ? measurements.find((m) => m.id === editingId) : null;
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-900">บันทึกผลการตรวจวัดสิ่งแวดล้อม</h1>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
-        >
-          <Plus size={16} /> บันทึกผลตรวจวัด
-        </button>
-      </div>
-
-      {showForm && (
-        <div className="space-y-3">
-          <div className="max-w-2xl">
-            <label className="text-xs text-slate-500 block mb-1">สถานที่</label>
-            <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="w-full sm:w-72 border border-slate-300 rounded-lg px-3 py-2 text-sm"
-            >
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </div>
-          <MeasurementSubForm
-            onCancel={() => setShowForm(false)}
-            onSubmit={(data) => {
-              onAdd({ id: Date.now(), locationId: locationId, ...data });
-              setShowForm(false);
-            }}
-          />
-        </div>
-      )}
-
-      {editingRecord && (
-        <MeasurementSubForm
-          initialRecord={editingRecord}
-          onCancel={() => setEditingId(null)}
-          onSubmit={(data) => {
-            onUpdateMeasurement(editingId, data);
-            setEditingId(null);
-          }}
-        />
-      )}
-
-      {typesPresent.length === 0 ? (
-        <Card><p className="text-sm text-slate-400">ยังไม่มีผลตรวจวัด</p></Card>
-      ) : (
-        <div className="space-y-6">
-          {typesPresent.map((type) => (
-            <div key={type}>
-              <p className="text-sm font-semibold text-slate-900 mb-3">หมวด: {measurementTypeLabel[type]}</p>
-              <div className="space-y-4 pl-3 border-l-2 border-slate-100">
-                {Object.keys(grouped[type]).map((locId) => {
-                  const records = [...grouped[type][locId]].sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
-                  return (
-                    <div key={locId}>
-                      <p className="text-base font-bold text-slate-800 mb-2">สถานที่: {locationName(locId)}</p>
-                      <div className="space-y-3">
-                        {records.map((m) => (
-                          <MeasurementRecordCard
-                            key={m.id}
-                            record={m}
-                            onEdit={() => setEditingId(m.id)}
-                            onDelete={() => onDeleteMeasurement(m.id)}
-                            onUpdateStatus={(status) => onUpdateMeasurement(m.id, { correctionStatus: status })}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------
-// Training Matrix — หลักสูตรตามตำแหน่งงาน/ความเสี่ยง + สถานะการอบรมของพนักงาน
-// ---------------------------------------------------------------
-
-function TrainingMatrixPage({ employees, locations, courses, requirements, records, onAddRequirement, onRemoveRequirement, onUpsertRecord, onDeleteRecord }) {
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ position: "", hazardType: "", courseId: courses[0]?.id ?? "" });
-  const [editingCell, setEditingCell] = useState(null); // { employeeId, courseId } | null
-  const [recordForm, setRecordForm] = useState({ completionDate: todayIso(), expiryDate: "" });
-  const positions = [...new Set(employees.map((e) => e.position))];
-
-  const submit = () => {
-    if (!form.position && !form.hazardType) return; // ต้องมีอย่างน้อย 1 อย่าง
-    if (!form.courseId) return; // กันไว้กรณียังไม่มีหลักสูตรในระบบให้เลือกเลย (dropdown ว่าง)
-    onAddRequirement({
-      id: Date.now(),
-      position: form.position || null,
-      hazardType: form.hazardType || null,
-      courseId: form.courseId,
-    });
-    setForm({ position: "", hazardType: "", courseId: courses[0]?.id ?? "" });
-    setShowForm(false);
-  };
-
-  const courseName = (id) => courses.find((c) => c.id === id)?.name ?? "-";
-
-  const startEditRecord = (employeeId, courseId) => {
-    const existing = records.find((r) => r.employeeId === employeeId && r.courseId === courseId);
-    setRecordForm({
-      completionDate: existing?.completionDate || todayIso(),
-      expiryDate: existing?.expiryDate || "",
-    });
-    setEditingCell({ employeeId, courseId });
-  };
-
-  const saveRecord = () => {
-    onUpsertRecord(editingCell.employeeId, editingCell.courseId, {
-      completionDate: recordForm.completionDate,
-      expiryDate: recordForm.expiryDate || null,
-    });
-    setEditingCell(null);
-  };
-
-  return (
-    <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">Training Matrix</h1>
-
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-slate-900">ตารางกำหนดหลักสูตรตามตำแหน่ง/ความเสี่ยง</p>
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
-          >
-            <Plus size={16} /> เพิ่ม requirement
-          </button>
-        </div>
-
-        {showForm && (
-          <Card className="mb-4">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold text-slate-900">เพิ่ม requirement ใหม่</p>
-              <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={18} />
-              </button>
-            </div>
-            <p className="text-xs text-slate-400 mb-3">ระบุตำแหน่งงาน และ/หรือ ความเสี่ยง อย่างน้อย 1 อย่าง</p>
-            <div className="grid sm:grid-cols-3 gap-3 mb-4">
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">ตำแหน่งงาน (ไม่บังคับ)</label>
-                <select
-                  value={form.position}
-                  onChange={(e) => setForm({ ...form, position: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="">ทุกตำแหน่ง</option>
-                  {positions.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">ความเสี่ยง (ไม่บังคับ)</label>
-                <select
-                  value={form.hazardType}
-                  onChange={(e) => setForm({ ...form, hazardType: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="">ทุกความเสี่ยง</option>
-                  {hazardOptions.map((h) => <option key={h} value={h}>{hazardTypeLabel[h]}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">หลักสูตรที่ต้องอบรม</label>
-                {courses.length === 0 ? (
-                  <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
-                    ยังไม่มีหลักสูตรในระบบ กรุณาติดต่อผู้ดูแลระบบให้เพิ่มหลักสูตรก่อน
-                  </p>
-                ) : (
-                  <select
-                    value={form.courseId}
-                    onChange={(e) => setForm({ ...form, courseId: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  >
-                    {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
-                ยกเลิก
-              </button>
-              <button onClick={submit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-                บันทึก
-              </button>
-            </div>
-          </Card>
-        )}
-
-        <Card className="p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 text-left">
-                  <th className="px-4 py-2.5 font-medium">ตำแหน่งงาน</th>
-                  <th className="px-4 py-2.5 font-medium">ความเสี่ยง</th>
-                  <th className="px-4 py-2.5 font-medium">หลักสูตรที่ต้องอบรม</th>
-                  <th className="px-4 py-2.5"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {requirements.map((r) => (
-                  <tr key={r.id} className="border-t border-slate-100">
-                    <td className="px-4 py-2.5">{r.position ?? <span className="text-slate-400">ทุกตำแหน่ง</span>}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{r.hazardType ? hazardTypeLabel[r.hazardType] : <span className="text-slate-400">ทุกความเสี่ยง</span>}</td>
-                    <td className="px-4 py-2.5">{courseName(r.courseId)}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      <button onClick={() => onRemoveRequirement(r.id)} className="text-xs text-slate-400 underline hover:text-red-600">
-                        ลบ
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">สถานะการอบรมของพนักงาน</p>
-        <Card className="p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 text-left">
-                  <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                  <th className="px-4 py-2.5 font-medium">ตำแหน่ง</th>
-                  <th className="px-4 py-2.5 font-medium">สถานที่ประจำ</th>
-                  <th className="px-4 py-2.5 font-medium">หลักสูตรที่ต้องอบรม</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((emp) => {
-                  const requiredIds = getRequiredCourseIds(emp, locations, requirements);
-                  const locationName = locations.find((l) => l.id === emp.primaryLocationId)?.name ?? "-";
-                  return (
-                    <tr key={emp.id} className="border-t border-slate-100 align-top">
-                      <td className="px-4 py-2.5">{emp.name}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{emp.position}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{locationName}</td>
-                      <td className="px-4 py-2.5">
-                        {requiredIds.length === 0 ? (
-                          <span className="text-slate-400">ไม่มีหลักสูตรบังคับ</span>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            {requiredIds.map((cid) => {
-                              const status = getTrainingComplianceStatus(emp.id, cid, records);
-                              const isEditingThis = editingCell?.employeeId === emp.id && editingCell?.courseId === cid;
-                              const hasRecord = records.some((r) => r.employeeId === emp.id && r.courseId === cid);
-                              if (isEditingThis) {
-                                return (
-                                  <div key={cid} className="bg-slate-50 rounded-lg p-2.5 space-y-2 max-w-xs">
-                                    <p className="text-xs font-medium text-slate-700">{courseName(cid)}</p>
-                                    <div>
-                                      <label className="text-xs text-slate-500 block mb-0.5">วันที่อบรมผ่าน</label>
-                                      <input
-                                        type="date"
-                                        value={recordForm.completionDate}
-                                        onChange={(e) => setRecordForm({ ...recordForm, completionDate: e.target.value })}
-                                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-xs text-slate-500 block mb-0.5">วันหมดอายุ (ถ้ามี)</label>
-                                      <input
-                                        type="date"
-                                        value={recordForm.expiryDate}
-                                        onChange={(e) => setRecordForm({ ...recordForm, expiryDate: e.target.value })}
-                                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs"
-                                      />
-                                    </div>
-                                    <div className="flex justify-end gap-2 pt-1">
-                                      <button onClick={() => setEditingCell(null)} className="text-xs text-slate-500 underline">ยกเลิก</button>
-                                      {hasRecord && (
-                                        <button
-                                          onClick={() => {
-                                            onDeleteRecord(emp.id, cid);
-                                            setEditingCell(null);
-                                          }}
-                                          className="text-xs text-red-600 underline"
-                                        >
-                                          ลบผลอบรม
-                                        </button>
-                                      )}
-                                      <button onClick={saveRecord} className="text-xs bg-slate-900 text-white px-2 py-1 rounded-lg">บันทึก</button>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <button
-                                  key={cid}
-                                  onClick={() => startEditRecord(emp.id, cid)}
-                                  className="flex items-center gap-2 text-left hover:bg-slate-50 rounded px-1 -mx-1 py-0.5"
-                                >
-                                  <span>{courseName(cid)}</span>
-                                  <Badge tone={trainingStatusTone(status)}>{trainingStatusLabel[status]}</Badge>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------
-// Auth: Login / Register / Pending approvals
-// ---------------------------------------------------------------
-
-function LoginPage({ onLogin, onGoToRegister }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  const submit = async () => {
-    if (!email.trim() || !password) return;
-    setError(null);
-    setLoading(true);
-
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (signInError) {
-      setLoading(false);
-      setError("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
-      return;
-    }
-
-    const profile = await fetchUserProfile(data.user.id);
-    setLoading(false);
-
-    if (!profile) {
-      setError("ไม่พบข้อมูลผู้ใช้งานนี้ในระบบ กรุณาติดต่อผู้ดูแลระบบ");
-      await supabase.auth.signOut();
-      return;
-    }
-    if (profile.status === "pending") {
-      setError("บัญชีนี้กำลังรอการอนุมัติจากผู้ดูแลระบบ");
-      await supabase.auth.signOut();
-      return;
-    }
-    if (profile.status === "rejected") {
-      setError("บัญชีนี้ถูกปฏิเสธการเข้าใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
-      await supabase.auth.signOut();
-      return;
-    }
-    onLogin(profile);
-  };
-
-  return (
-    <div className="min-h-[600px] flex items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-sm">
-        <p className="text-lg font-semibold text-slate-900 mb-1">เข้าสู่ระบบ JorPor</p>
-        <p className="text-sm text-slate-500 mb-5">ระบบช่วยงาน จป.</p>
-        {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-3">{error}</div>}
-        <div className="mb-3">
-          <label className="text-xs text-slate-500 block mb-1">อีเมล</label>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@company.com"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="mb-4">
-          <label className="text-xs text-slate-500 block mb-1">รหัสผ่าน</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <button
-          onClick={submit}
-          disabled={loading}
-          className="w-full text-sm bg-slate-900 text-white px-3 py-2 rounded-lg mb-3 disabled:opacity-50"
-        >
-          {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
-        </button>
-        <p className="text-xs text-slate-500 text-center">
-          ยังไม่มีบัญชี? <button onClick={onGoToRegister} className="underline text-slate-700">สมัครใช้งาน</button>
-        </p>
-      </Card>
-    </div>
-  );
-}
-
-function RegisterPage({ onGoToLogin }) {
-  const [form, setForm] = useState({ name: "", companyName: "", email: "", password: "" });
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  const submit = async () => {
-    if (!form.name.trim() || !form.companyName.trim() || !form.email.trim() || !form.password) return;
-    if (form.password.length < 6) {
-      setError("รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร");
-      return;
-    }
-    setError(null);
-    setLoading(true);
-
-    // metadata นี้จะถูกอ่านโดย trigger ฝั่งฐานข้อมูล (handle_new_auth_user) เพื่อ
-    // สร้างบริษัทใหม่ + ผูกแพ็กเกจ Free + สร้างแถวผู้ใช้สถานะ pending ให้อัตโนมัติ
-    const { error: signUpError } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: {
-        data: { full_name: form.name, company_name: form.companyName },
-      },
-    });
-
-    setLoading(false);
-    if (signUpError) {
-      if (signUpError.message === "User already registered") {
-        setError("อีเมลนี้มีบัญชีอยู่แล้วในระบบ");
-      } else if (signUpError.status === 429 || /rate limit/i.test(signUpError.message || "")) {
-        // Supabase มีโควตาส่งอีเมลยืนยันตัวตนแบบใช้ร่วมกัน (เฉพาะช่วงทดสอบ/ยังไม่ได้ต่อ
-        // SMTP ของตัวเอง) ถ้าสมัครถี่เกินไปจะติดโควตานี้ ไม่ใช่ปัญหาที่ตัวระบบ
-        setError("ขณะนี้มีผู้สมัครใช้งานถี่เกินไป กรุณาลองใหม่อีกครั้งในอีกสักครู่");
-      } else {
-        setError("สมัครไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-      }
-      return;
-    }
-    setSubmitted(true);
-  };
-
-  if (submitted) {
-    return (
-      <div className="min-h-[600px] flex items-center justify-center bg-slate-50 p-4">
-        <Card className="w-full max-w-sm text-center">
-          <p className="text-lg font-semibold text-slate-900 mb-2">สมัครสำเร็จ</p>
-          <p className="text-sm text-slate-600 mb-5">
-            บัญชีของคุณกำลังรอการอนุมัติจากผู้ดูแลระบบ จะเข้าสู่ระบบได้หลังได้รับการอนุมัติแล้ว
-            (เริ่มต้นด้วยแพ็กเกจ Free) — ถ้าระบบยืนยันอีเมลไว้ อย่าลืมเช็กอีเมลเพื่อยืนยันตัวตนก่อนด้วย
-          </p>
-          <button onClick={onGoToLogin} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700">
-            กลับไปหน้าเข้าสู่ระบบ
-          </button>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-[600px] flex items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-sm">
-        <p className="text-lg font-semibold text-slate-900 mb-1">สมัครใช้งาน</p>
-        <p className="text-sm text-slate-500 mb-5">
-          1 บัญชี ต่อ 1 บริษัท — ข้อมูลของแต่ละบริษัทแยกจากกันโดยสมบูรณ์ ต้องได้รับการอนุมัติจาก
-          ผู้ดูแลระบบก่อนจึงจะเข้าใช้งานได้
-        </p>
-        {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-3">{error}</div>}
-        <div className="mb-3">
-          <label className="text-xs text-slate-500 block mb-1">ชื่อ-สกุลผู้ดูแลระบบของบริษัท (จป.)</label>
-          <input
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="mb-3">
-          <label className="text-xs text-slate-500 block mb-1">ชื่อบริษัท</label>
-          <input
-            value={form.companyName}
-            onChange={(e) => setForm({ ...form, companyName: e.target.value })}
-            placeholder="เช่น บริษัท ตัวอย่าง จำกัด"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="mb-3">
-          <label className="text-xs text-slate-500 block mb-1">อีเมล</label>
-          <input
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="mb-4">
-          <label className="text-xs text-slate-500 block mb-1">รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
-          <input
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <button
-          onClick={submit}
-          disabled={loading}
-          className="w-full text-sm bg-slate-900 text-white px-3 py-2 rounded-lg mb-3 disabled:opacity-50"
-        >
-          {loading ? "กำลังสมัคร..." : "สมัครใช้งาน"}
-        </button>
-        <p className="text-xs text-slate-500 text-center">
-          มีบัญชีแล้ว? <button onClick={onGoToLogin} className="underline text-slate-700">เข้าสู่ระบบ</button>
-        </p>
-      </Card>
-    </div>
-  );
-}
-
-function UserDetail({ user, tierPermissions, onBack, onApprove, onReject, onUpdateUser, onGoToRoleManagement }) {
-  const [userType, setUserType] = useState(user.userType);
-
-  const save = () => {
-    onUpdateUser(user.id, { userType });
-  };
-
-  const statusTone2 = user.status === "approved" ? "bg-emerald-50 text-emerald-700" : user.status === "pending" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700";
-  const statusLabel = user.status === "approved" ? "อนุมัติแล้ว" : user.status === "pending" ? "รอการอนุมัติ" : "ถูกปฏิเสธ";
-  const currentTierPages = tierPermissions?.[userType] || [];
-
-  return (
-    <div className="space-y-5">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={16} /> กลับไปรายชื่อผู้ใช้งาน
-      </button>
-
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-900">{user.companyName}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{user.name} · {user.email}</p>
-          <p className="text-xs text-slate-400 mt-1">สมัครเมื่อ {formatThaiDate(user.registeredAt)}</p>
-        </div>
-        <Badge tone={statusTone2}>{statusLabel}</Badge>
-      </div>
-
-      {user.status === "pending" && (
-        <Card className="flex items-center justify-between">
-          <p className="text-sm text-slate-700">คำขอนี้ยังไม่ได้รับการพิจารณา</p>
-          <div className="flex gap-2">
-            <button onClick={() => onReject(user.id)} className="text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600">
-              ปฏิเสธ
-            </button>
-            <button onClick={() => onApprove(user.id)} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-              อนุมัติ
-            </button>
-          </div>
-        </Card>
-      )}
-
-      <Card>
-        <p className="text-sm font-semibold text-slate-900 mb-3">แพ็กเกจของบริษัทนี้</p>
-        <select
-          value={userType}
-          onChange={(e) => setUserType(e.target.value)}
-          className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4"
-        >
-          {userTypeOptions.map((t) => <option key={t} value={t}>{userTypeLabel[t]}</option>)}
-        </select>
-
-        <div className="bg-slate-50 rounded-lg p-3 mb-4">
-          <p className="text-xs text-slate-500 mb-1.5">สิทธิ์การเข้าถึงหน้าของแพ็กเกจนี้ (กำหนดที่หน้า "จัดการประเภทผู้ใช้งาน")</p>
-          {currentTierPages.length === 0 ? (
-            <p className="text-sm text-slate-400">ไม่มีสิทธิ์เข้าถึงหน้าปฏิบัติงานใดๆ</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {currentTierPages.map((key) => (
-                <span key={key} className="text-xs bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded">
-                  {PAGE_OPTIONS.find((p) => p.key === key)?.label ?? key}
-                </span>
-              ))}
-            </div>
-          )}
-          <button onClick={onGoToRoleManagement} className="text-xs text-slate-500 underline hover:text-slate-700 mt-2">
-            ไปแก้ไขสิทธิ์ของแพ็กเกจนี้
-          </button>
-        </div>
-
-        <div className="flex justify-end">
-          <button onClick={save} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-            บันทึกแพ็กเกจ
-          </button>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function AdminUserManagementPage({ users, tierPermissions, onApprove, onReject, onUpdateUser, onGoToRoleManagement }) {
-  const [selectedId, setSelectedId] = useState(null);
-  const selected = users.find((u) => u.id === selectedId);
-
-  if (selected) {
-    return (
-      <UserDetail
-        user={selected}
-        tierPermissions={tierPermissions}
-        onBack={() => setSelectedId(null)}
-        onApprove={onApprove}
-        onReject={onReject}
-        onUpdateUser={onUpdateUser}
-        onGoToRoleManagement={onGoToRoleManagement}
-      />
-    );
-  }
-
-  const statusBadge = (status) => {
-    if (status === "approved") return <Badge tone="bg-emerald-50 text-emerald-700">อนุมัติแล้ว</Badge>;
-    if (status === "pending") return <Badge tone="bg-amber-50 text-amber-700">รอการอนุมัติ</Badge>;
-    return <Badge tone="bg-red-50 text-red-700">ถูกปฏิเสธ</Badge>;
-  };
-
-  const pendingUsers = users.filter((u) => u.status === "pending");
-
-  return (
-    <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">จัดการผู้ใช้งาน</h1>
-
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <p className="text-sm font-semibold text-slate-900">คำขอที่รอการอนุมัติ</p>
-          {pendingUsers.length > 0 && (
-            <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{pendingUsers.length}</span>
-          )}
-        </div>
-        {pendingUsers.length === 0 ? (
-          <Card><p className="text-sm text-slate-400">ไม่มีคำขอที่รอการอนุมัติในขณะนี้</p></Card>
-        ) : (
-          <Card className="p-0 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-amber-50 text-amber-700 text-left">
-                    <th className="px-4 py-2.5 font-medium">บริษัท</th>
-                    <th className="px-4 py-2.5 font-medium">ผู้ติดต่อ</th>
-                    <th className="px-4 py-2.5 font-medium">อีเมล</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่สมัคร</th>
-                    <th className="px-4 py-2.5"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingUsers.map((u) => (
-                    <tr key={u.id} className="border-t border-slate-100">
-                      <td className="px-4 py-2.5">{u.companyName}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{u.name}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{u.email}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(u.registeredAt)}</td>
-                      <td className="px-4 py-2.5 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => onReject(u.id)} className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600">
-                            ปฏิเสธ
-                          </button>
-                          <button onClick={() => onApprove(u.id)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-900 text-white">
-                            อนุมัติ
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-      </div>
-
-      <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ผู้ใช้งานทั้งหมด</p>
-      <Card className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-left">
-                <th className="px-4 py-2.5 font-medium">บริษัท</th>
-                <th className="px-4 py-2.5 font-medium">ผู้ติดต่อ</th>
-                <th className="px-4 py-2.5 font-medium">อีเมล</th>
-                <th className="px-4 py-2.5 font-medium">วันที่สมัคร</th>
-                <th className="px-4 py-2.5 font-medium">แพ็กเกจ</th>
-                <th className="px-4 py-2.5 font-medium">สถานะ</th>
-                <th className="px-4 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr
-                  key={u.id}
-                  onClick={() => setSelectedId(u.id)}
-                  className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
-                >
-                  <td className="px-4 py-2.5">{u.companyName}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{u.name}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{u.email}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(u.registeredAt)}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{userTypeLabel[u.userType] ?? "-"}</td>
-                  <td className="px-4 py-2.5">{statusBadge(u.status)}</td>
-                  <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-      </div>
-    </div>
-  );
-}
-
-function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissions, onUpdateTierLimits }) {
-  const [selectedTier, setSelectedTier] = useState(null);
-  const [pages, setPages] = useState([]);
-  const [maxEmployees, setMaxEmployees] = useState("");
-
-  const startEdit = (tier) => {
-    setSelectedTier(tier);
-    setPages([...(tierPermissions[tier] || [])]);
-    setMaxEmployees(tierLimits[tier]?.maxEmployees != null ? String(tierLimits[tier].maxEmployees) : "");
-  };
-
-  const togglePage = (key) => {
-    setPages(pages.includes(key) ? pages.filter((k) => k !== key) : [...pages, key]);
-  };
-
-  const save = () => {
-    onUpdateTierPermissions(selectedTier, pages);
-    onUpdateTierLimits(selectedTier, { maxEmployees: maxEmployees.trim() === "" ? null : Number(maxEmployees) });
-    setSelectedTier(null);
-  };
-
-  if (selectedTier) {
-    return (
-      <div className="space-y-5">
-        <button onClick={() => setSelectedTier(null)} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-          <ArrowLeft size={16} /> กลับไปรายการประเภทผู้ใช้งาน
-        </button>
-        <h1 className="text-lg font-semibold text-slate-900">แก้ไขสิทธิ์: {userTypeLabel[selectedTier]}</h1>
-
-        <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-1">สิทธิ์การเข้าถึงแต่ละหน้า</p>
-          <p className="text-xs text-slate-400 mb-3">
-            บริษัทที่ใช้แพ็กเกจนี้จะเห็นเมนูตามที่เลือกไว้นี้เหมือนกันทั้งหมด
-          </p>
-          <div className="grid sm:grid-cols-2 gap-2">
-            {PAGE_OPTIONS.map((p) => (
-              <label key={p.key} className="flex items-center gap-2 text-sm text-slate-700 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={pages.includes(p.key)}
-                  onChange={() => togglePage(p.key)}
-                  className="rounded border-slate-300"
-                />
-                {p.label}
-              </label>
-            ))}
-          </div>
-        </Card>
-
-        <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-1">ข้อจำกัดการบันทึกข้อมูล</p>
-          <p className="text-xs text-slate-400 mb-3">เว้นว่างไว้ = ไม่จำกัดจำนวน</p>
-          <label className="text-xs text-slate-500 block mb-1">จำนวนพนักงานสูงสุดที่บันทึกได้</label>
-          <input
-            type="number"
-            min="0"
-            value={maxEmployees}
-            onChange={(e) => setMaxEmployees(e.target.value)}
-            placeholder="ไม่จำกัด"
-            className="w-full sm:w-56 border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
-        </Card>
-
-        <div className="flex justify-end">
-          <button onClick={save} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-            บันทึกสิทธิ์และข้อจำกัดของแพ็กเกจนี้
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">จัดการประเภทผู้ใช้งาน</h1>
-      <Card className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-left">
-                <th className="px-4 py-2.5 font-medium">แพ็กเกจ</th>
-                <th className="px-4 py-2.5 font-medium">จำนวนหน้าที่เข้าถึงได้</th>
-                <th className="px-4 py-2.5 font-medium">พนักงานสูงสุด</th>
-                <th className="px-4 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {userTypeOptions.map((t) => (
-                <tr key={t} className="border-t border-slate-100">
-                  <td className="px-4 py-2.5">{userTypeLabel[t]}</td>
-                  <td className="px-4 py-2.5 text-slate-500">
-                    {(tierPermissions[t] || []).length} / {PAGE_OPTIONS.length} หน้า
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-500">
-                    {tierLimits[t]?.maxEmployees != null ? `${tierLimits[t].maxEmployees} คน` : "ไม่จำกัด"}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button onClick={() => startEdit(t)} className="text-xs text-slate-500 underline hover:text-slate-700">
-                      แก้ไขสิทธิ์
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------
-// Multi-tenant data isolation — แต่ละ user (บริษัท) มีชุดข้อมูลของตัวเองแยกกันสมบูรณ์
-// ---------------------------------------------------------------
-
-// ข้อมูลตัวอย่างของบริษัทที่สอง (วรรณา / XYZ) — ตั้งใจให้มีน้อยและต่างจากบริษัทแรกชัดเจน
-// เพื่อพิสูจน์ว่าข้อมูลแยกกันจริง ไม่ปนกัน
-const initialEmployeesXyz = [
-  { id: 101, code: "XYZ-001", name: "กมล สุขใจ", position: "พนักงานขับรถ", department: "โลจิสติกส์", primaryLocationId: 201 },
-  { id: 102, code: "XYZ-002", name: "แดง ใจงาม", position: "พนักงานทั่วไป", department: "คลังสินค้า", primaryLocationId: 201 },
-];
-
-const initialLocationsXyz = [
-  {
-    id: 201, name: "โกดังสินค้า XYZ", building: "อาคารเดียว",
-    description: "พื้นที่จัดเก็บและกระจายสินค้าหลักของบริษัท", riskLevel: "low",
-    hazards: ["mechanical"],
-    riskAssessment: {
-      riskLevel: "low", findings: "-", controlMeasures: "-", nextDue: "",
-      updatedAt: "2026-02-15T09:00:00", updatedBy: "วรรณา ตั้งมั่น",
-    },
-  },
-];
-
-function createEmptyTenantData() {
-  return {
-    incidents: [], equipment: [], ppe: [], ppeCatalog: [], noncompliance: [],
-    employees: [], locations: [], environmentalMeasurements: [],
-    trainingRequirements: [], trainingRecords: [], ltiBaselineDate: null,
-  };
-}
-
-// tenantStore เก็บข้อมูลปฏิบัติงานทั้งหมดแยกตาม user.id (1 user = 1 บริษัท) — บัญชีแอดมิน
-// ระบบ (isAdmin) ไม่มีแถวในนี้เลย เพราะไม่ใช่ tenant ที่มีข้อมูลปฏิบัติงานของตัวเอง
-const initialTenantStore = {
-  1: {
-    incidents: initialIncidents, equipment: initialEquipment, ppe: initialPpe, ppeCatalog: initialPpeCatalog,
-    noncompliance: initialNoncompliance, employees: initialEmployees, locations: initialLocations,
-    environmentalMeasurements: initialEnvironmentalMeasurements, trainingRequirements: initialTrainingRequirements,
-    trainingRecords: initialTrainingRecords, ltiBaselineDate: null,
-  },
-  2: {
-    incidents: [], equipment: [], ppe: [], ppeCatalog: [...initialPpeCatalog], noncompliance: [],
-    employees: initialEmployeesXyz, locations: initialLocationsXyz, environmentalMeasurements: [],
-    trainingRequirements: [], trainingRecords: [], ltiBaselineDate: null,
-  },
-};
-
-// ---------------------------------------------------------------
 // App shell
 // ---------------------------------------------------------------
 
 const NAV = [
   { key: "dashboard", label: "แดชบอร์ด", icon: LayoutDashboard },
   { key: "incidents", label: "อุบัติเหตุ", icon: AlertTriangle },
-  { key: "unsafeActs", label: "การกระทำที่ไม่ปลอดภัย", icon: ShieldAlert },
-  { key: "environmental", label: "ตรวจวัดสิ่งแวดล้อม", icon: Wind },
-  { key: "trainingMatrix", label: "Training Matrix", icon: GraduationCap },
-  { key: "checklist", label: "ตรวจสอบ", icon: ClipboardCheck },
-  { type: "divider" },
-  { key: "employees", label: "พนักงาน", icon: Users },
+  { key: "ppe", label: "PPE", icon: HardHat },
+  { key: "equipment", label: "อุปกรณ์ความปลอดภัย", icon: Wrench },
   { key: "locations", label: "สถานที่ทำงาน", icon: MapPin },
-  {
-    type: "group",
-    label: "ทะเบียนอุปกรณ์เซฟตี้",
-    icon: HardHat,
-    items: [
-      { key: "ppe", label: "PPE", icon: HardHat },
-      { key: "equipment", label: "อุปกรณ์ความปลอดภัย", icon: Wrench },
-    ],
-  },
+  { key: "employees", label: "พนักงาน", icon: Users },
+  { key: "checklist", label: "ตรวจสอบ", icon: ClipboardCheck },
 ];
 
-function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpen, currentUser, tierPermissions, onLogout }) {
-  const allowed = tierPermissions?.[currentUser?.userType] || [];
-  const canSee = (key) => allowed.includes(key);
-
-  return (
-    <div className="flex flex-col h-full">
-      <p className="font-semibold text-slate-900 px-2 py-2 text-[15px]">JorPor</p>
-      <nav className="space-y-1 mt-1 flex-1">
-        {NAV.map((item, idx) => {
-          if (item.type === "divider") {
-            return <div key={`divider-${idx}`} className="my-2 border-t border-slate-200" />;
-          }
-          if (item.type === "group") {
-            const visibleSubItems = item.items.filter((i) => canSee(i.key));
-            if (visibleSubItems.length === 0) return null;
-            const isActive = visibleSubItems.some((i) => i.key === page);
-            const open = equipmentGroupOpen || isActive;
-            const GroupIcon = item.icon;
-            return (
-              <div key="equipment-group">
-                <button
-                  onClick={() => setEquipmentGroupOpen(!equipmentGroupOpen)}
-                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-left ${
-                    isActive ? "text-slate-900 font-medium" : "text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  <GroupIcon size={16} className="shrink-0" />
-                  <span className="flex-1 leading-snug">{item.label}</span>
-                  <ChevronRight size={14} className={`text-slate-400 transition-transform shrink-0 ${open ? "rotate-90" : ""}`} />
-                </button>
-                {open && (
-                  <div className="pl-4 space-y-1 mt-1">
-                    {visibleSubItems.map(({ key, label, icon: Icon }) => (
-                      <button
-                        key={key}
-                        onClick={() => selectPage(key)}
-                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-left ${
-                          page === key ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-500 hover:bg-slate-50"
-                        }`}
-                      >
-                        <Icon size={15} className="shrink-0" />
-                        <span className="leading-snug">{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          }
-          if (!canSee(item.key)) return null;
-          const { key, label, icon: Icon } = item;
-          return (
-            <button
-              key={key}
-              onClick={() => selectPage(key)}
-              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-left ${
-                page === key ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-500 hover:bg-slate-50"
-              }`}
-            >
-              <Icon size={16} className="shrink-0" />
-              <span className="leading-snug">{label}</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      {currentUser && (
-        <div className="pt-3 mt-2 border-t border-slate-200">
-          <p className="text-sm text-slate-800 px-2.5 truncate">{currentUser.companyName}</p>
-          <p className="text-xs text-slate-400 px-2.5 mb-2">{currentUser.name} · {userTypeLabel[currentUser.userType] ?? "-"}</p>
-          <button
-            onClick={onLogout}
-            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-left text-slate-500 hover:bg-slate-50"
-          >
-            <LogOut size={16} className="shrink-0" />
-            ออกจากระบบ
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function JorPorPrototype() {
-  const [users, setUsers] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [authView, setAuthView] = useState("login");
-  const [tierPermissions, setTierPermissions] = useState(initialTierPermissions);
-  const [tierLimits, setTierLimits] = useState(initialTierLimits);
-  const [adminView, setAdminView] = useState("users");
-
   const [page, setPage] = useState("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [equipmentGroupOpen, setEquipmentGroupOpen] = useState(false);
-  const [tenantStore, setTenantStore] = useState(initialTenantStore);
-  const [employees, setEmployeesData] = useState([]);
-  const [employeesLoading, setEmployeesLoading] = useState(false);
-  const [locationsData, setLocationsData] = useState([]);
-  const [locationsLoading, setLocationsLoading] = useState(false);
-  // รูปสถานที่ยังไม่รองรับ Supabase Storage (ดูโน้ตใน mapLocationRow) เก็บไว้ในหน่วยความจำ
-  // เบราว์เซอร์แยกต่างหากที่นี่ ไม่ผ่านการ fetch/refetch ของ Supabase เพื่อไม่ให้ถูกเขียนทับ
-  const [locationPhotos, setLocationPhotos] = useState({});
-  const locations = locationsData.map((l) => ({ ...l, photoUrl: locationPhotos[l.id] ?? null }));
-  const [trainingCourses, setTrainingCourses] = useState([]);
-  const [trainingRequirements, setTrainingRequirementsData] = useState([]);
-  const [trainingRecords, setTrainingRecordsData] = useState([]);
-  const [incidents, setIncidentsData] = useState([]);
-  const [incidentsLoading, setIncidentsLoading] = useState(false);
-  const [ppeCatalog, setPpeCatalogData] = useState([]);
-  const [ppe, setPpeData] = useState([]);
-  const [ppeLoading, setPpeLoading] = useState(false);
+  const [incidents, setIncidents] = useState(initialIncidents);
+  const [ltiBaselineDate, setLtiBaselineDate] = useState(null);
+  const [equipment, setEquipment] = useState(initialEquipment);
+  const [ppe, setPpe] = useState(initialPpe);
+  const [ppeCatalog, setPpeCatalog] = useState(initialPpeCatalog);
+  const [noncompliance, setNoncompliance] = useState(initialNoncompliance);
+  const [employees, setEmployees] = useState(initialEmployees);
+  const [locations, setLocations] = useState(initialLocations);
 
-  // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
-  // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
-  async function fetchEmployees() {
-    setEmployeesLoading(true);
-    const { data, error } = await supabase
-      .from("employees")
-      .select("id, employee_code, full_name, position, department, primary_location_id")
-      .eq("is_active", true)
-      .order("full_name");
-    setEmployeesLoading(false);
-    if (error) {
-      console.error("fetchEmployees error:", error);
-      return;
-    }
-    setEmployeesData((data || []).map(mapEmployeeRow));
-  }
-
-  // ดึงสถานที่ทำงานจริงจาก Supabase พร้อม hazards และผลประเมินความเสี่ยงล่าสุดของแต่ละที่
-  // (รวม 3 ตารางเข้าด้วยกันในฝั่งโค้ด เพราะ Supabase JS client ไม่รองรับ "แถวล่าสุดต่อกลุ่ม"
-  // ในคำสั่งเดียวโดยตรง)
-  async function fetchLocations() {
-    setLocationsLoading(true);
-    const { data: locs, error } = await supabase
-      .from("work_locations")
-      .select("id, name, building, description, risk_level, created_at")
-      .eq("is_active", true)
-      .order("name");
-    if (error) {
-      console.error("fetchLocations error:", error);
-      setLocationsLoading(false);
-      return;
-    }
-    const locationIds = (locs || []).map((l) => l.id);
-    let hazardsByLocation = {};
-    let latestAssessmentByLocation = {};
-
-    if (locationIds.length > 0) {
-      const { data: hazardRows } = await supabase
-        .from("work_location_hazards")
-        .select("location_id, hazard_type")
-        .in("location_id", locationIds);
-      (hazardRows || []).forEach((h) => {
-        if (!hazardsByLocation[h.location_id]) hazardsByLocation[h.location_id] = [];
-        hazardsByLocation[h.location_id].push(h);
-      });
-
-      const { data: assessmentRows } = await supabase
-        .from("location_risk_assessments")
-        .select("location_id, risk_level, findings, control_measures, next_assessment_due, assessment_date")
-        .in("location_id", locationIds)
-        .order("assessment_date", { ascending: false });
-      // เรียงจากใหม่ไปเก่าแล้ว ดังนั้นแถวแรกที่เจอของแต่ละ location_id คือรอบล่าสุด
-      (assessmentRows || []).forEach((a) => {
-        if (!latestAssessmentByLocation[a.location_id]) latestAssessmentByLocation[a.location_id] = a;
-      });
-    }
-
-    setLocationsData(
-      (locs || []).map((l) =>
-        mapLocationRow(l, hazardsByLocation[l.id], latestAssessmentByLocation[l.id], currentUser?.name)
-      )
-    );
-    setLocationsLoading(false);
-  }
-
-  // คลังหลักสูตร: ดึงทั้งหลักสูตรกลาง (organization_id เป็น NULL) และหลักสูตรที่บริษัทตัวเอง
-  // สร้างเพิ่มเอง (ถ้ามี) — RLS อนุญาตให้เห็นทั้งสองแบบอยู่แล้ว ไม่ต้องกรองซ้ำ
-  async function fetchTrainingCourses() {
-    const { data, error } = await supabase
-      .from("training_courses")
-      .select("id, name, validity_period_days")
-      .order("name");
-    if (error) {
-      console.error("fetchTrainingCourses error:", error);
-      return;
-    }
-    setTrainingCourses((data || []).map(mapCourseRow));
-  }
-
-  async function fetchTrainingRequirements() {
-    const { data, error } = await supabase
-      .from("training_requirements")
-      .select("id, position, hazard_type, course_id");
-    if (error) {
-      console.error("fetchTrainingRequirements error:", error);
-      return;
-    }
-    setTrainingRequirementsData((data || []).map(mapRequirementRow));
-  }
-
-  async function fetchTrainingRecords() {
-    const { data, error } = await supabase
-      .from("training_records")
-      .select("id, employee_id, course_id, completion_date, expiry_date");
-    if (error) {
-      console.error("fetchTrainingRecords error:", error);
-      return;
-    }
-    setTrainingRecordsData((data || []).map(mapTrainingRecordRow));
-  }
-
-  // ดึงอุบัติเหตุจริงจาก Supabase พร้อมพนักงานที่บาดเจ็บ (incident_injured_employees) และ
-  // ความคืบหน้า (incident_updates) ของแต่ละเคส — รวม 3 ตารางฝั่งโค้ดเหมือนแนวทางเดียวกับ
-  // fetchLocations เพราะ Supabase JS client ดึงเป็นโครงสร้างซ้อนหลายชั้นในคำสั่งเดียวไม่ได้ง่ายๆ
-  async function fetchIncidents() {
-    setIncidentsLoading(true);
-    const { data: incidentRows, error } = await supabase
-      .from("incidents")
-      .select("id, location, injury_type, severity, incident_date, status, description")
-      .order("incident_date", { ascending: false });
-    if (error) {
-      console.error("fetchIncidents error:", error);
-      setIncidentsLoading(false);
-      return;
-    }
-    const incidentIds = (incidentRows || []).map((r) => r.id);
-    let injuredByIncident = {};
-    let updatesByIncident = {};
-    let userNameById = {};
-
-    if (incidentIds.length > 0) {
-      const { data: injuredRows } = await supabase
-        .from("incident_injured_employees")
-        .select("id, incident_id, employee_id, lost_workdays, injury_description")
-        .in("incident_id", incidentIds);
-      (injuredRows || []).forEach((e) => {
-        if (!injuredByIncident[e.incident_id]) injuredByIncident[e.incident_id] = [];
-        injuredByIncident[e.incident_id].push(e);
-      });
-
-      const { data: updateRows } = await supabase
-        .from("incident_updates")
-        .select("id, incident_id, updated_by, note, new_status, created_at")
-        .in("incident_id", incidentIds)
-        .order("created_at", { ascending: true });
-      (updateRows || []).forEach((u) => {
-        if (!updatesByIncident[u.incident_id]) updatesByIncident[u.incident_id] = [];
-        updatesByIncident[u.incident_id].push(u);
-      });
-
-      const updaterIds = [...new Set((updateRows || []).map((u) => u.updated_by).filter(Boolean))];
-      if (updaterIds.length > 0) {
-        const { data: userRows } = await supabase.from("users").select("id, full_name").in("id", updaterIds);
-        (userRows || []).forEach((u) => { userNameById[u.id] = u.full_name; });
-      }
-    }
-
-    setIncidentsData(
-      (incidentRows || []).map((r) =>
-        mapIncidentRow(r, injuredByIncident[r.id], updatesByIncident[r.id], userNameById)
-      )
-    );
-    setIncidentsLoading(false);
-  }
-
-  const addIncident = async (inc) => {
-    const { data, error } = await supabase
-      .from("incidents")
-      .insert({
-        organization_id: currentUser.organizationId,
-        reported_by: currentUser.id,
-        location: inc.location,
-        injury_type: inc.type,
-        severity: severityUiToDb[inc.severity] || "minor",
-        incident_date: inc.incidentDate,
-        status: "reported",
-        description: inc.description,
-      })
-      .select()
-      .single();
-    if (error) {
-      alert("บันทึกอุบัติเหตุไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setIncidentsData([mapIncidentRow(data, [], []), ...incidents]);
-  };
-
-  const updateIncident = async (incidentId, fields) => {
-    const payload = {};
-    if (fields.location !== undefined) payload.location = fields.location;
-    if (fields.severity !== undefined) payload.severity = severityUiToDb[fields.severity] || fields.severity;
-    if (fields.description !== undefined) payload.description = fields.description;
-    if (fields.status !== undefined) payload.status = incidentStatusUiToDb[fields.status] || fields.status;
-    const { error } = await supabase.from("incidents").update(payload).eq("id", incidentId);
-    if (error) {
-      alert("บันทึกการแก้ไขไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setIncidentsData(incidents.map((inc) => (inc.id === incidentId ? { ...inc, ...fields } : inc)));
-  };
-
-  const deleteIncident = async (incidentId) => {
-    const { error } = await supabase.from("incidents").delete().eq("id", incidentId);
-    if (error) {
-      alert("ลบอุบัติเหตุไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setIncidentsData(incidents.filter((inc) => inc.id !== incidentId));
-  };
-
-  // บันทึกความคืบหน้า 1 รายการ (incident_updates) และถ้ามีการเปลี่ยนสถานะพ่วงมาด้วย
-  // ให้อัปเดต incidents.status ให้ตรงกันทันที (เหมือนพฤติกรรมเดิมของ mock data)
-  const addIncidentProgress = async (incidentId, entry) => {
-    const newStatusDb = entry.newStatus ? incidentStatusUiToDb[entry.newStatus] : null;
-    const { data, error } = await supabase
-      .from("incident_updates")
-      .insert({
-        organization_id: currentUser.organizationId,
-        incident_id: incidentId,
-        updated_by: currentUser.id,
-        note: entry.note,
-        new_status: newStatusDb,
-      })
-      .select()
-      .single();
-    if (error) {
-      alert("บันทึกความคืบหน้าไม่สำเร็จ: " + error.message);
-      return;
-    }
-    if (newStatusDb) {
-      await supabase.from("incidents").update({ status: newStatusDb }).eq("id", incidentId);
-    }
-    setIncidentsData(
+  const addIncident = (inc) => setIncidents([inc, ...incidents]);
+  const updateIncident = (incidentId, fields) =>
+    setIncidents(incidents.map((inc) => (inc.id === incidentId ? { ...inc, ...fields } : inc)));
+  const addIncidentProgress = (incidentId, entry) =>
+    setIncidents(
       incidents.map((inc) =>
         inc.id === incidentId
-          ? {
-              ...inc,
-              status: entry.newStatus || inc.status,
-              updates: [...inc.updates, { rowId: data.id, date: data.created_at.slice(0, 10), by: currentUser.name, note: data.note, newStatus: entry.newStatus || null }],
-            }
+          ? { ...inc, updates: [...inc.updates, entry], status: entry.newStatus || inc.status }
           : inc
       )
     );
-  };
-
-  // เพิ่ม/แก้ไข/ลบพนักงานที่ได้รับบาดเจ็บของอุบัติเหตุหนึ่งเคส (incident_injured_employees)
-  const addInjuredEmployee = async (incidentId, entry) => {
-    const { data, error } = await supabase
-      .from("incident_injured_employees")
-      .insert({
-        incident_id: incidentId,
-        employee_id: entry.employeeId,
-        lost_workdays: entry.lostWorkdays,
-        injury_description: entry.injuryType,
-      })
-      .select()
-      .single();
-    if (error) {
-      alert("เพิ่มพนักงานบาดเจ็บไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setIncidentsData(
-      incidents.map((inc) =>
-        inc.id === incidentId
-          ? {
-              ...inc,
-              injuredEmployees: [
-                ...inc.injuredEmployees,
-                { rowId: data.id, employeeId: data.employee_id, lostWorkdays: data.lost_workdays, injuryType: data.injury_description || "-" },
-              ],
-            }
-          : inc
-      )
-    );
-  };
-
-  const updateInjuredEmployee = async (incidentId, rowId, field, value) => {
-    const payload = field === "lostWorkdays" ? { lost_workdays: value } : { injury_description: value };
-    const { error } = await supabase.from("incident_injured_employees").update(payload).eq("id", rowId);
-    if (error) {
-      alert("บันทึกไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setIncidentsData(
-      incidents.map((inc) =>
-        inc.id === incidentId
-          ? { ...inc, injuredEmployees: inc.injuredEmployees.map((e) => (e.rowId === rowId ? { ...e, [field]: value } : e)) }
-          : inc
-      )
-    );
-  };
-
-  const removeInjuredEmployee = async (incidentId, rowId) => {
-    const { error } = await supabase.from("incident_injured_employees").delete().eq("id", rowId);
-    if (error) {
-      alert("ลบไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setIncidentsData(
-      incidents.map((inc) =>
-        inc.id === incidentId
-          ? { ...inc, injuredEmployees: inc.injuredEmployees.filter((e) => e.rowId !== rowId) }
-          : inc
-      )
-    );
-  };
-
-  // ลบบันทึกความคืบหน้า 1 รายการ (ไม่ปรับ incidents.status กลับคืน เพราะไม่ทราบว่าค่าก่อนหน้า
-  // ควรเป็นอะไร — จป. ต้องแก้สถานะเองที่การ์ด "รายละเอียดและสถานะ" ถ้าต้องการ)
-  const removeIncidentProgress = async (incidentId, rowId) => {
-    const { error } = await supabase.from("incident_updates").delete().eq("id", rowId);
-    if (error) {
-      alert("ลบไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setIncidentsData(
-      incidents.map((inc) =>
-        inc.id === incidentId ? { ...inc, updates: inc.updates.filter((u) => u.rowId !== rowId) } : inc
-      )
-    );
-  };
-
-  // ดึงประเภท/รุ่นอุปกรณ์ PPE — คืนค่า rows ดิบกลับไปด้วย (ไม่ใช่แค่ตั้ง state) เพราะ
-  // fetchPpeIssuance ต้องใช้ rows ดิบชุดเดียวกันมา join หาชื่อ/รุ่น/มาตรฐานทันทีโดยไม่ต้อง
-  // รอ state อัปเดตก่อน (setState เป็น async ถ้ารออ่านจาก state จะมี race condition)
-  async function fetchPpeCatalog() {
-    const { data, error } = await supabase
-      .from("ppe_catalog")
-      .select("id, name, model, standard_ref, lifespan_days")
-      .order("name");
-    if (error) {
-      console.error("fetchPpeCatalog error:", error);
-      return [];
-    }
-    setPpeCatalogData((data || []).map(mapPpeCatalogRow));
-    return data || [];
-  }
-
-  async function fetchPpeIssuance(catalogRows) {
-    const { data, error } = await supabase
-      .from("ppe_issuance")
-      .select("id, ppe_catalog_id, employee_id, quantity, issuance_reason, issued_date, expiry_date")
-      .order("issued_date", { ascending: false });
-    if (error) {
-      console.error("fetchPpeIssuance error:", error);
-      return;
-    }
-    const catalogById = {};
-    (catalogRows || []).forEach((c) => { catalogById[c.id] = c; });
-    setPpeData((data || []).map((r) => mapPpeIssuanceRow(r, catalogById)));
-  }
-
-  async function fetchPpe() {
-    setPpeLoading(true);
-    const catalogRows = await fetchPpeCatalog();
-    await fetchPpeIssuance(catalogRows);
-    setPpeLoading(false);
-  }
-
-  const addPpeCatalogItem = async (item) => {
-    const { data, error } = await supabase
-      .from("ppe_catalog")
-      .insert({
-        organization_id: currentUser.organizationId,
-        name: item.name,
-        model: item.model === "-" ? null : item.model,
-        standard_ref: item.standard === "-" ? null : item.standard,
-        lifespan_days: item.lifespanDays,
-      })
-      .select()
-      .single();
-    if (error) {
-      alert("เพิ่มประเภทอุปกรณ์ไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setPpeCatalogData([...ppeCatalog, mapPpeCatalogRow(data)]);
-  };
-
-  const updatePpeCatalogItem = async (id, fields) => {
-    const payload = {};
-    if (fields.model !== undefined) payload.model = fields.model === "-" ? null : fields.model;
-    if (fields.standard !== undefined) payload.standard_ref = fields.standard === "-" ? null : fields.standard;
-    if (fields.lifespanDays !== undefined) payload.lifespan_days = fields.lifespanDays;
-    const { error } = await supabase.from("ppe_catalog").update(payload).eq("id", id);
-    if (error) {
-      alert("บันทึกไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setPpeCatalogData(ppeCatalog.map((c) => (c.id === id ? { ...c, ...fields } : c)));
-  };
-
-  const deletePpeCatalogItem = async (id) => {
-    const { error } = await supabase.from("ppe_catalog").delete().eq("id", id);
-    if (error) {
-      // ลบไม่ได้ถ้ามีประวัติการเบิก (ppe_issuance) อ้างอิงประเภทนี้อยู่ (foreign key constraint)
-      alert("ลบไม่สำเร็จ: มีประวัติการเบิกที่ใช้ประเภทอุปกรณ์นี้อยู่แล้ว ลบประวัติการเบิกก่อนจึงจะลบประเภทนี้ได้ (" + error.message + ")");
-      return;
-    }
-    setPpeCatalogData(ppeCatalog.filter((c) => c.id !== id));
-  };
-
-  const addPpeIssuance = async (record) => {
-    const { data, error } = await supabase
-      .from("ppe_issuance")
-      .insert({
-        organization_id: currentUser.organizationId,
-        ppe_catalog_id: record.catalogId,
-        employee_id: record.employeeId,
-        quantity: record.quantity,
-        issuance_reason: record.reason,
-        issued_by: currentUser.id,
-        issued_date: record.issuedDate,
-        expiry_date: record.expiry,
-        status: "active",
-      })
-      .select()
-      .single();
-    if (error) {
-      alert("บันทึกการเบิกไม่สำเร็จ: " + error.message);
-      return;
-    }
-    const catalogById = {};
-    ppeCatalog.forEach((c) => { catalogById[c.id] = { name: c.name, model: c.model, standard_ref: c.standard }; });
-    setPpeData([mapPpeIssuanceRow(data, catalogById), ...ppe]);
-  };
-
-  const deletePpeIssuance = async (id) => {
-    const { error } = await supabase.from("ppe_issuance").delete().eq("id", id);
-    if (error) {
-      alert("ลบไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setPpeData(ppe.filter((p) => p.id !== id));
-  };
-
-  useEffect(() => {
-    if (currentUser && !currentUser.isAdmin) {
-      fetchEmployees();
-      fetchLocations();
-      fetchTrainingCourses();
-      fetchTrainingRequirements();
-      fetchTrainingRecords();
-      fetchIncidents();
-      fetchPpe();
-    }
-  }, [currentUser?.id]);
-
-
-  // ตรวจสอบ session เดิมตอนเปิดแอป (ทำให้รีเฟรชหน้าแล้วไม่ต้อง login ใหม่ทุกครั้ง)
-  // และคอยฟัง event ออกจากระบบจากที่อื่น (เช่น เปิดหลายแท็บ) — ต้องอยู่ก่อน early
-  // return ใดๆ เพราะ hook ต้องถูกเรียกจำนวนเท่ากันทุกครั้งที่ render
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await fetchUserProfile(session.user.id);
-        if (profile && profile.status === "approved") {
-          setCurrentUser(profile);
-        }
-      }
-      setSessionChecked(true);
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") setCurrentUser(null);
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
-  // ดึงค่าสิทธิ์การเข้าถึงหน้า/ข้อจำกัดของแต่ละแพ็กเกจจาก subscription_plans
-  // จริงทุกครั้งที่มีคน login (ทั้งผู้ใช้ทั่วไปและแอดมิน) เพราะทั้งเมนูฝั่งผู้ใช้ทั่วไป
-  // และหน้าจัดการประเภทของแอดมินต้องใช้ค่าชุดเดียวกันนี้
-  useEffect(() => {
-    if (!currentUser) return;
-    fetchTierConfig();
-  }, [currentUser?.id]);
-
-  async function fetchTierConfig() {
-    const { data, error } = await supabase.from("subscription_plans").select("name, max_employees, features");
-    if (error || !data) {
-      console.error("fetchTierConfig error:", error);
-      return;
-    }
-    const perms = {};
-    const limits = {};
-    data.forEach((p) => {
-      const key = p.name.toLowerCase();
-      perms[key] = p.features?.pages === "all" ? ALL_PAGE_KEYS : (p.features?.pages || []);
-      limits[key] = { maxEmployees: p.max_employees };
-    });
-    setTierPermissions(perms);
-    setTierLimits(limits);
-  }
-
-  // ดึงรายชื่อผู้ใช้งานทั้งหมด (ทุกบริษัท) ใช้เฉพาะฝั่งแอดมินสำหรับหน้าจัดการ/อนุมัติ
-  // — RLS ฝั่งฐานข้อมูลอนุญาตให้ super_admin เท่านั้นที่ดึงได้ครบทุกคน
-  async function fetchAllUsers() {
-    const { data, error } = await supabase
-      .from("users")
-      .select(USER_SELECT_QUERY)
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("fetchAllUsers error:", error);
-      return;
-    }
-    setUsers((data || []).map(mapUserRow));
-  }
-
-  useEffect(() => {
-    if (currentUser?.isAdmin) fetchAllUsers();
-  }, [currentUser?.isAdmin]);
-
-  const handleLogin = (profile) => {
-    setCurrentUser(profile);
-    if (!profile.isAdmin) {
-      setPage(tierPermissions[profile.userType]?.[0] || "dashboard");
-    }
-  };
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    setPage("dashboard");
-  };
-  const approveUser = async (id) => {
-    await supabase.from("users").update({ approval_status: "approved" }).eq("id", id);
-    fetchAllUsers();
-  };
-  const rejectUser = async (id) => {
-    await supabase.from("users").update({ approval_status: "rejected" }).eq("id", id);
-    fetchAllUsers();
-  };
-  // ใช้แก้ "แพ็กเกจ" ของบริษัทนั้น (userType) เท่านั้น — ต้องไปอัปเดตที่ subscriptions.plan_id
-  // ไม่ใช่แก้ตรงตาราง users เพราะแพ็กเกจผูกกับ organization ไม่ใช่ผูกกับ user โดยตรง
-  const updateUser = async (id, fields) => {
-    if (!fields.userType) return;
-    const { data: userRow } = await supabase.from("users").select("organization_id").eq("id", id).single();
-    const { data: planRow } = await supabase
-      .from("subscription_plans")
-      .select("id")
-      .ilike("name", fields.userType)
-      .single();
-    if (!userRow?.organization_id || !planRow?.id) return;
-    await supabase.from("subscriptions").update({ plan_id: planRow.id }).eq("organization_id", userRow.organization_id);
-    fetchAllUsers();
-  };
-  const updateTierPermissions = async (tier, pages) => {
-    await supabase
-      .from("subscription_plans")
-      .update({ features: { pages } })
-      .ilike("name", tier);
-    fetchTierConfig();
-  };
-  const updateTierLimits = async (tier, limits) => {
-    await supabase
-      .from("subscription_plans")
-      .update({ max_employees: limits.maxEmployees })
-      .ilike("name", tier);
-    fetchTierConfig();
-  };
-
-  if (!sessionChecked) {
-    return (
-      <div className="min-h-[600px] flex items-center justify-center bg-slate-50">
-        <p className="text-sm text-slate-400">กำลังโหลด...</p>
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return authView === "login" ? (
-      <LoginPage onLogin={handleLogin} onGoToRegister={() => setAuthView("register")} />
-    ) : (
-      <RegisterPage onGoToLogin={() => setAuthView("login")} />
-    );
-  }
-
-  if (currentUser.isAdmin) {
-    return (
-      <div className="min-h-[600px] bg-white font-sans">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-200">
-          <p className="font-semibold text-slate-900 text-[15px]">JorPor · ผู้ดูแลระบบ</p>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-500">{currentUser.name}</span>
-            <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-              <LogOut size={16} /> ออกจากระบบ
-            </button>
-          </div>
-        </div>
-        <div className="px-4 sm:px-6 pt-4 flex gap-1 border-b border-slate-200">
-          <button
-            onClick={() => setAdminView("users")}
-            className={`flex items-center gap-1.5 text-sm px-3 py-2 border-b-2 -mb-px ${adminView === "users" ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-500"}`}
-          >
-            จัดการผู้ใช้งาน
-            {users.filter((u) => u.status === "pending").length > 0 && (
-              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
-                {users.filter((u) => u.status === "pending").length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setAdminView("roles")}
-            className={`text-sm px-3 py-2 border-b-2 -mb-px ${adminView === "roles" ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-500"}`}
-          >
-            จัดการประเภทผู้ใช้งาน
-          </button>
-        </div>
-        <div className="p-4 sm:p-6">
-          {adminView === "users" ? (
-            <AdminUserManagementPage
-              users={users}
-              tierPermissions={tierPermissions}
-              onApprove={approveUser}
-              onReject={rejectUser}
-              onUpdateUser={updateUser}
-              onGoToRoleManagement={() => setAdminView("roles")}
-            />
-          ) : (
-            <RoleManagementPage
-              tierPermissions={tierPermissions}
-              tierLimits={tierLimits}
-              onUpdateTierPermissions={updateTierPermissions}
-              onUpdateTierLimits={updateTierLimits}
-            />
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ข้อมูลปฏิบัติงานทั้งหมดแยกตาม currentUser.id (1 user = 1 บริษัท) — ไม่ปนกับบริษัทอื่นเลย
-  const tenant = tenantStore[currentUser.id] || createEmptyTenantData();
-  const updateTenant = (patch) => setTenantStore({ ...tenantStore, [currentUser.id]: { ...tenant, ...patch } });
-
-  const equipment = tenant.equipment;
-  const setEquipment = (val) => updateTenant({ equipment: val });
-  const noncompliance = tenant.noncompliance;
-  const setNoncompliance = (val) => updateTenant({ noncompliance: val });
-  const environmentalMeasurements = tenant.environmentalMeasurements;
-  const setEnvironmentalMeasurements = (val) => updateTenant({ environmentalMeasurements: val });
-  const ltiBaselineDate = tenant.ltiBaselineDate;
-  const setLtiBaselineDate = (val) => updateTenant({ ltiBaselineDate: val });
-
-  // ข้อจำกัดจำนวนพนักงานตามประเภทผู้ใช้งาน (เช่น Free บันทึกได้ไม่เกิน 5 คน)
-  const employeeLimit = tierLimits[currentUser.userType]?.maxEmployees ?? null;
-
   const addNoncompliance = (record) => setNoncompliance([record, ...noncompliance]);
-  const deleteNoncompliance = (id) => setNoncompliance(noncompliance.filter((r) => r.id !== id));
-  const addEmployee = async (emp) => {
-    const { error } = await supabase.from("employees").insert(toEmployeeRow(emp, currentUser.organizationId));
-    if (error) {
-      console.error("addEmployee error:", error);
-      alert("บันทึกพนักงานไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchEmployees();
-  };
-  const addManyEmployees = async (newEmps) => {
-    const rows = newEmps.map((e) => toEmployeeRow(e, currentUser.organizationId));
-    const { error } = await supabase.from("employees").insert(rows);
-    if (error) {
-      console.error("addManyEmployees error:", error);
-      alert("นำเข้าพนักงานไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchEmployees();
-  };
-  const deleteEmployee = async (empId) => {
-    // soft-delete ตามที่ออกแบบไว้ใน schema (ดูโน้ตข้อ 23) — ไม่ลบแถวจริง เพราะพนักงานอาจมี
-    // ประวัติ PPE/อุบัติเหตุ/อบรมผูกอยู่ที่ต้องเก็บไว้ตรวจสอบย้อนหลังตามกฎหมายแรงงาน
-    const { error } = await supabase.from("employees").update({ is_active: false }).eq("id", empId);
-    if (error) {
-      console.error("deleteEmployee error:", error);
-      alert("ลบพนักงานไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchEmployees();
-  };
-  const updateEmployee = async (empId, fields) => {
-    const current = employees.find((e) => e.id === empId);
-    const merged = { ...current, ...fields };
-    const { error } = await supabase.from("employees").update(toEmployeeRow(merged, currentUser.organizationId)).eq("id", empId);
-    if (error) {
-      console.error("updateEmployee error:", error);
-      alert("แก้ไขพนักงานไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchEmployees();
-  };
-  const addLocation = async (loc) => {
-    const { data: newLoc, error } = await supabase
-      .from("work_locations")
-      .insert({
-        organization_id: currentUser.organizationId,
-        name: loc.name,
-        building: loc.building === "-" ? null : loc.building,
-        description: loc.description === "-" ? null : loc.description,
-        risk_level: loc.riskLevel,
-      })
-      .select()
-      .single();
-    if (error) {
-      console.error("addLocation error:", error);
-      alert("บันทึกสถานที่ไม่สำเร็จ: " + error.message);
-      return;
-    }
-    if (loc.hazards?.length) {
-      await supabase.from("work_location_hazards").insert(
-        loc.hazards.map((h) => ({ location_id: newLoc.id, hazard_type: h }))
-      );
-    }
-    if (loc.riskAssessment) {
-      await supabase.from("location_risk_assessments").insert({
-        organization_id: currentUser.organizationId,
-        location_id: newLoc.id,
-        assessed_by: currentUser.id,
-        risk_level: loc.riskAssessment.riskLevel,
-        findings: loc.riskAssessment.findings === "-" ? null : loc.riskAssessment.findings,
-        control_measures: loc.riskAssessment.controlMeasures === "-" ? null : loc.riskAssessment.controlMeasures,
-        next_assessment_due: loc.riskAssessment.nextDue || null,
-      });
-    }
-    fetchLocations();
-  };
-  const addEnvironmentalMeasurement = (m) => setEnvironmentalMeasurements([...environmentalMeasurements, m]);
-  const updateEnvironmentalMeasurement = (id, fields) =>
-    setEnvironmentalMeasurements(environmentalMeasurements.map((m) => (m.id === id ? { ...m, ...fields } : m)));
-  const deleteEnvironmentalMeasurement = (id) =>
-    setEnvironmentalMeasurements(environmentalMeasurements.filter((m) => m.id !== id));
-  const addTrainingRequirement = async (r) => {
-    const { error } = await supabase.from("training_requirements").insert({
-      organization_id: currentUser.organizationId,
-      position: r.position || null,
-      hazard_type: r.hazardType || null,
-      course_id: r.courseId,
-    });
-    if (error) {
-      console.error("addTrainingRequirement error:", error);
-      alert("บันทึกไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchTrainingRequirements();
-  };
-  const removeTrainingRequirement = async (id) => {
-    const { error } = await supabase.from("training_requirements").delete().eq("id", id);
-    if (error) {
-      console.error("removeTrainingRequirement error:", error);
-      alert("ลบไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchTrainingRequirements();
-  };
-  // บันทึกผลอบรมของพนักงานคนหนึ่งต่อหลักสูตรหนึ่ง — ถ้ามีบันทึกเดิมอยู่แล้วจะแก้ไขทับ (upsert)
-  // ไม่ใช่เพิ่มซ้ำเรื่อยๆ ทำให้ "แก้ไขว่าผ่านอบรมแล้วหรือยัง" ทำได้จากจุดเดียวเสมอ
-  const upsertTrainingRecord = async (employeeId, courseId, fields) => {
-    const existing = trainingRecords.find((r) => r.employeeId === employeeId && r.courseId === courseId);
-    const payload = {
-      organization_id: currentUser.organizationId,
-      employee_id: employeeId,
-      course_id: courseId,
-      completion_date: fields.completionDate,
-      expiry_date: fields.expiryDate || null,
-    };
-    const { error } = existing
-      ? await supabase.from("training_records").update(payload).eq("id", existing.id)
-      : await supabase.from("training_records").insert(payload);
-    if (error) {
-      console.error("upsertTrainingRecord error:", error);
-      alert("บันทึกผลอบรมไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchTrainingRecords();
-  };
-  const deleteTrainingRecord = async (employeeId, courseId) => {
-    const existing = trainingRecords.find((r) => r.employeeId === employeeId && r.courseId === courseId);
-    if (!existing) return;
-    const { error } = await supabase.from("training_records").delete().eq("id", existing.id);
-    if (error) {
-      console.error("deleteTrainingRecord error:", error);
-      alert("ลบผลอบรมไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchTrainingRecords();
-  };
-  const updateLocation = async (id, fields) => {
-    // เคสรูปภาพอย่างเดียว — เก็บไว้ในหน่วยความจำเท่านั้น ยังไม่รองรับ Supabase Storage
-    // (ดูโน้ตใน mapLocationRow) ไม่ต้องยิง Supabase หรือ refetch เลยเพื่อไม่ให้ค่าที่เพิ่งตั้ง
-    // ถูกเขียนทับกลับเป็น null ทันที
-    if (fields.photoUrl !== undefined && Object.keys(fields).length === 1) {
-      setLocationPhotos((prev) => ({ ...prev, [id]: fields.photoUrl }));
-      return;
-    }
-
-    const basicUpdate = {};
-    if (fields.name !== undefined) basicUpdate.name = fields.name;
-    if (fields.building !== undefined) basicUpdate.building = fields.building === "-" ? null : fields.building;
-    if (fields.description !== undefined) basicUpdate.description = fields.description === "-" ? null : fields.description;
-    if (fields.riskLevel !== undefined) basicUpdate.risk_level = fields.riskLevel;
-    if (Object.keys(basicUpdate).length > 0) {
-      await supabase.from("work_locations").update(basicUpdate).eq("id", id);
-    }
-
-    // แทนที่รายการความเสี่ยงทั้งหมดใหม่ทุกครั้งที่แก้ไข (ลบของเดิมแล้วใส่ใหม่ ง่ายกว่าไล่ diff
-    // ทีละรายการ และจำนวนความเสี่ยงต่อสถานที่มีไม่เยอะจนเป็นปัญหาประสิทธิภาพ)
-    if (fields.hazards !== undefined) {
-      await supabase.from("work_location_hazards").delete().eq("location_id", id);
-      if (fields.hazards.length > 0) {
-        await supabase.from("work_location_hazards").insert(
-          fields.hazards.map((h) => ({ location_id: id, hazard_type: h }))
-        );
-      }
-    }
-
-    // บันทึกผลประเมินความเสี่ยงเป็น "ประวัติรอบใหม่" เสมอ ไม่ทับของเดิม ตามที่ออกแบบไว้ใน
-    // schema (location_risk_assessments เป็นตารางประวัติ) พร้อมอัปเดต risk_level ล่าสุด
-    // ไว้ที่ work_locations ด้วย (denormalized ตามที่ออกแบบไว้)
-    if (fields.riskAssessment) {
-      await supabase.from("location_risk_assessments").insert({
-        organization_id: currentUser.organizationId,
-        location_id: id,
-        assessed_by: currentUser.id,
-        risk_level: fields.riskAssessment.riskLevel,
-        findings: fields.riskAssessment.findings === "-" ? null : fields.riskAssessment.findings,
-        control_measures: fields.riskAssessment.controlMeasures === "-" ? null : fields.riskAssessment.controlMeasures,
-        next_assessment_due: fields.riskAssessment.nextDue || null,
-      });
-      await supabase.from("work_locations").update({ risk_level: fields.riskAssessment.riskLevel }).eq("id", id);
-    }
-
-    fetchLocations();
-  };
-  const deleteLocation = async (id) => {
-    const { error } = await supabase.from("work_locations").update({ is_active: false }).eq("id", id);
-    if (error) {
-      console.error("deleteLocation error:", error);
-      alert("ลบสถานที่ไม่สำเร็จ: " + error.message);
-      return;
-    }
-    fetchLocations();
-  };
+  const addPpeIssuance = (record) => setPpe([...ppe, record]);
+  const addPpeCatalogItem = (item) => setPpeCatalog([...ppeCatalog, item]);
+  const updatePpeCatalogItem = (id, fields) =>
+    setPpeCatalog(ppeCatalog.map((c) => (c.id === id ? { ...c, ...fields } : c)));
+  const addEmployee = (emp) => setEmployees([...employees, emp]);
+  const addLocation = (loc) => setLocations([...locations, loc]);
+  const updateLocation = (id, fields) => setLocations(locations.map((l) => (l.id === id ? { ...l, ...fields } : l)));
   const addEquipment = (unit) => setEquipment([...equipment, unit]);
-  const deleteEquipmentUnit = (id) => setEquipment(equipment.filter((eq) => eq.id !== id));
 
   const addInspection = (equipmentId, record) => {
     setEquipment(
@@ -5956,30 +2740,13 @@ export default function JorPorPrototype() {
     );
   };
 
-  const deleteInspection = (equipmentId, index) => {
-    setEquipment(
-      equipment.map((eq) => {
-        if (eq.id !== equipmentId) return eq;
-        const newHistory = eq.history.filter((_, i) => i !== index);
-        const latest = newHistory[0];
-        return {
-          ...eq,
-          history: newHistory,
-          lastDate: latest ? latest.date : eq.lastDate,
-          status: latest ? (latest.result === "ไม่ผ่าน" ? "รอตรวจซ้ำ" : "ปกติ") : "ปกติ",
-          pendingReinspectionDue: latest && latest.result === "ไม่ผ่าน" ? latest.correctiveDeadline : null,
-        };
-      })
-    );
-  };
-
   const selectPage = (key) => {
     setPage(key);
     setMobileMenuOpen(false); // ปิดเมนูอัตโนมัติหลังเลือกเมนูบนมือถือ
   };
 
   return (
-    <div className="min-h-[600px] bg-white font-sans sm:flex sm:items-start">
+    <div className="min-h-[600px] bg-white font-sans sm:grid sm:grid-cols-[180px_1fr]">
       {/* แถบบนสุดสำหรับมือถือ — มีปุ่มเปิดเมนู */}
       <div className="sm:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200">
         <p className="font-semibold text-slate-900 text-[15px]">JorPor</p>
@@ -6000,52 +2767,38 @@ export default function JorPorPrototype() {
         />
       )}
 
-      {/* เมนูมือถือ: fixed drawer เลื่อนเข้า-ออก แสดงเฉพาะจอเล็กกว่า sm */}
+      {/* เมนูด้านซ้าย: บนมือถือเป็น drawer เลื่อนเข้า-ออก / บนจอใหญ่แสดงตลอดเวลา */}
       <div
-        className={`sm:hidden fixed inset-y-0 left-0 z-40 w-56 bg-white border-r border-slate-200 p-3
-          transform transition-transform duration-200
-          ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`border-r border-slate-200 p-3 bg-white
+          fixed inset-y-0 left-0 z-40 w-56 transform transition-transform duration-200
+          ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
+          sm:static sm:translate-x-0 sm:z-auto sm:w-auto`}
       >
-        <SidebarNav
-          page={page}
-          selectPage={selectPage}
-          equipmentGroupOpen={equipmentGroupOpen}
-          setEquipmentGroupOpen={setEquipmentGroupOpen}
-          currentUser={currentUser}
-          tierPermissions={tierPermissions}
-          onLogout={handleLogout}
-        />
+        <p className="font-semibold text-slate-900 px-2 py-2 text-[15px]">JorPor</p>
+        <nav className="space-y-1 mt-1">
+          {NAV.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => selectPage(key)}
+              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-left ${
+                page === key ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+        </nav>
       </div>
 
-      {/* เมนู desktop: แสดงตลอดเวลา อยู่ในโครง grid ปกติ ไม่ใช้ fixed/translate เลย */}
-      <div className="hidden sm:flex sm:flex-col sm:w-[224px] sm:shrink-0 sm:h-screen sm:sticky sm:top-0 sm:overflow-y-auto border-r border-slate-200 p-3 bg-white">
-        <SidebarNav
-          page={page}
-          selectPage={selectPage}
-          equipmentGroupOpen={equipmentGroupOpen}
-          setEquipmentGroupOpen={setEquipmentGroupOpen}
-          currentUser={currentUser}
-          tierPermissions={tierPermissions}
-          onLogout={handleLogout}
-        />
-      </div>
-
-      <div className="p-4 sm:p-6 sm:flex-1 overflow-auto min-w-0 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200">
+      <div className="p-4 sm:p-6 overflow-auto min-w-0">
         {page === "dashboard" && (
           <Dashboard
             incidents={incidents}
             ppe={ppe}
             equipment={equipment}
-            locations={locations}
-            noncompliance={noncompliance}
-            environmentalMeasurements={environmentalMeasurements}
-            employees={employees}
-            trainingRequirements={trainingRequirements}
-            trainingRecords={trainingRecords}
-            trainingCourses={trainingCourses}
             ltiBaselineDate={ltiBaselineDate}
             onSetLtiBaselineDate={setLtiBaselineDate}
-            currentUser={currentUser}
           />
         )}
         {page === "incidents" && (
@@ -6054,11 +2807,6 @@ export default function JorPorPrototype() {
             onAdd={addIncident}
             onUpdate={updateIncident}
             onAddProgress={addIncidentProgress}
-            onRemoveProgress={removeIncidentProgress}
-            onDeleteIncident={deleteIncident}
-            onAddInjured={addInjuredEmployee}
-            onUpdateInjured={updateInjuredEmployee}
-            onRemoveInjured={removeInjuredEmployee}
             locations={locations}
             employees={employees}
           />
@@ -6067,76 +2815,27 @@ export default function JorPorPrototype() {
           <PpePage
             employees={employees}
             ppe={ppe}
+            noncompliance={noncompliance}
             catalog={ppeCatalog}
+            onAddNoncompliance={addNoncompliance}
             onAddIssuance={addPpeIssuance}
-            onDeleteIssuance={deletePpeIssuance}
             onAddCatalogItem={addPpeCatalogItem}
             onUpdateCatalogItem={updatePpeCatalogItem}
-            onDeleteCatalogItem={deletePpeCatalogItem}
           />
-        )}
-        {page === "unsafeActs" && (
-          <UnsafeActsPage employees={employees} records={noncompliance} onAdd={addNoncompliance} onDelete={deleteNoncompliance} />
         )}
         {page === "equipment" && (
-          <EquipmentPage
-            equipment={equipment}
-            onAddInspection={addInspection}
-            onAddEquipment={addEquipment}
-            onDeleteInspection={deleteInspection}
-            onDeleteEquipment={deleteEquipmentUnit}
-          />
+          <EquipmentPage equipment={equipment} onAddInspection={addInspection} onAddEquipment={addEquipment} />
         )}
         {page === "locations" && (
           <LocationsPage
             locations={locations}
             incidents={incidents}
-            measurements={environmentalMeasurements}
             onAdd={addLocation}
             onUpdate={updateLocation}
-            onDelete={deleteLocation}
-            onAddMeasurement={addEnvironmentalMeasurement}
-            onUpdateMeasurement={updateEnvironmentalMeasurement}
-            onDeleteMeasurement={deleteEnvironmentalMeasurement}
           />
         )}
         {page === "employees" && (
-          <EmployeesPage
-            employees={employees}
-            locations={locations}
-            ppe={ppe}
-            noncompliance={noncompliance}
-            incidents={incidents}
-            trainingRecords={trainingRecords}
-            trainingCourses={trainingCourses}
-            employeeLimit={employeeLimit}
-            onAdd={addEmployee}
-            onAddMany={addManyEmployees}
-            onDelete={deleteEmployee}
-            onUpdate={updateEmployee}
-          />
-        )}
-        {page === "environmental" && (
-          <EnvironmentalMonitoringPage
-            locations={locations}
-            measurements={environmentalMeasurements}
-            onAdd={addEnvironmentalMeasurement}
-            onUpdateMeasurement={updateEnvironmentalMeasurement}
-            onDeleteMeasurement={deleteEnvironmentalMeasurement}
-          />
-        )}
-        {page === "trainingMatrix" && (
-          <TrainingMatrixPage
-            employees={employees}
-            locations={locations}
-            courses={trainingCourses}
-            requirements={trainingRequirements}
-            records={trainingRecords}
-            onAddRequirement={addTrainingRequirement}
-            onRemoveRequirement={removeTrainingRequirement}
-            onUpsertRecord={upsertTrainingRecord}
-            onDeleteRecord={deleteTrainingRecord}
-          />
+          <EmployeesPage employees={employees} ppe={ppe} noncompliance={noncompliance} incidents={incidents} onAdd={addEmployee} />
         )}
         {page === "checklist" && <ChecklistPage />}
       </div>
