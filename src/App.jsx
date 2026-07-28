@@ -924,7 +924,7 @@ function Dashboard({
       </Card>
 
       <div className="flex items-center gap-2 flex-wrap">
-        <label className="text-xs text-slate-500">
+        <label className="text-xs font-bold text-slate-500">
           วันเกิดเหตุ LTI ล่าสุดก่อนใช้ระบบ <span className="text-slate-400">(กรอกครั้งเดียวจากบันทึกเอกสารเดิม ถ้ามี)</span>
         </label>
         <input
@@ -1178,7 +1178,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
         <div>
           <h1 className="text-lg font-bold text-slate-900">ทะเบียนอุบัติเหตุ</h1>
           <div className="flex items-center gap-2 mt-1.5">
-            <label className="text-sm text-slate-500">วันเกิดเหตุล่าสุด:</label>
+            <label className="text-sm font-bold text-slate-500">วันเกิดเหตุล่าสุด:</label>
             <span className="text-sm text-slate-700">
               {autoLatestIncidentDate ? formatThaiDate(autoLatestIncidentDate) : "ยังไม่มีข้อมูล"}
             </span>
@@ -1202,7 +1202,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">สถานที่เกิดเหตุ (จุดที่ชัดเจน)</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">สถานที่เกิดเหตุ (จุดที่ชัดเจน)</label>
               <select
                 value={locationMode === "custom" ? "__custom__" : form.location}
                 onChange={(e) => {
@@ -1230,7 +1230,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               )}
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
               <select
                 value={form.type}
                 onChange={(e) => setForm({ ...form, type: e.target.value })}
@@ -1245,7 +1245,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">
+              <label className="text-xs font-bold text-slate-500 block mb-1">
                 วันที่เกิดเหตุ <span className="text-slate-400">(ค่าเริ่มต้นคือวันนี้ แก้ไขได้กรณีรายงานย้อนหลัง)</span>
               </label>
               <input
@@ -1256,7 +1256,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">เวลาโดยประมาณ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">เวลาโดยประมาณ</label>
               <input
                 type="time"
                 value={form.incidentTime}
@@ -1266,7 +1266,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
             </div>
           </div>
           <div className="mb-3">
-            <label className="text-xs text-slate-500 block mb-1">แผนก/หน่วยงาน</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">แผนก/หน่วยงาน</label>
             <input
               value={form.department}
               onChange={(e) => setForm({ ...form, department: e.target.value })}
@@ -1275,7 +1275,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
             />
           </div>
           <div className="mb-3">
-            <label className="text-xs text-slate-500 block mb-1">ระดับความรุนแรง</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความรุนแรง</label>
             <div className="flex gap-2 flex-wrap">
               {["เกือบเกิดเหตุ", "เล็กน้อย", "ปานกลาง", "รุนแรง"].map((s) => (
                 <button
@@ -1317,7 +1317,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
             <div className="p-3 bg-white">
               <div className="grid sm:grid-cols-2 gap-2 mb-2">
                 <div>
-                  <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">พนักงาน</label>
                   <select
                     value={newInjured.employeeId}
                     onChange={(e) => setNewInjured({ ...newInjured, employeeId: e.target.value })}
@@ -1331,7 +1331,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
                   )}
                 </div>
                 <div>
-                  <label className="text-xs text-slate-500 block mb-1">ส่วนของร่างกายที่บาดเจ็บ</label>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">ส่วนของร่างกายที่บาดเจ็บ</label>
                   <input
                     value={newInjured.bodyPart}
                     onChange={(e) => setNewInjured({ ...newInjured, bodyPart: e.target.value })}
@@ -1342,7 +1342,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               </div>
               <div className="grid sm:grid-cols-2 gap-2 mb-2">
                 <div>
-                  <label className="text-xs text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
                   <input
                     value={newInjured.injuryType}
                     onChange={(e) => setNewInjured({ ...newInjured, injuryType: e.target.value })}
@@ -1351,7 +1351,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-500 block mb-1">จำนวนวันหยุดงาน</label>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">จำนวนวันหยุดงาน</label>
                   <input
                     type="number"
                     min="0"
@@ -1375,7 +1375,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
             </div>
           </div>
           <div className="mb-3">
-            <label className="text-xs text-slate-500 block mb-1">เหตุการณ์ที่เกิดขึ้น (บรรยายสั้นๆ ว่าเกิดอะไรขึ้น)</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">เหตุการณ์ที่เกิดขึ้น (บรรยายสั้นๆ ว่าเกิดอะไรขึ้น)</label>
             <textarea
               rows={3}
               value={form.description}
@@ -1385,7 +1385,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
             />
           </div>
           <div className="mb-3">
-            <label className="text-xs text-slate-500 block mb-1">การปฐมพยาบาลเบื้องต้นที่ทำไปแล้ว</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">การปฐมพยาบาลเบื้องต้นที่ทำไปแล้ว</label>
             <textarea
               rows={2}
               value={form.firstAidGiven}
@@ -1395,7 +1395,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
             />
           </div>
           <div className="mb-3">
-            <label className="text-xs text-slate-500 block mb-1">สาเหตุเบื้องต้นที่คาดว่าเป็นไปได้</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">สาเหตุเบื้องต้นที่คาดว่าเป็นไปได้</label>
             <textarea
               rows={2}
               value={form.probableCause}
@@ -1406,7 +1406,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-4">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ชื่อผู้แจ้ง (หัวหน้างาน)</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อผู้แจ้ง (หัวหน้างาน)</label>
               <input
                 value={form.reporterName}
                 onChange={(e) => setForm({ ...form, reporterName: e.target.value })}
@@ -1415,7 +1415,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">เบอร์ติดต่อกลับ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">เบอร์ติดต่อกลับ</label>
               <input
                 value={form.reporterPhone}
                 onChange={(e) => setForm({ ...form, reporterPhone: e.target.value })}
@@ -1595,7 +1595,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
           <div className="space-y-3">
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">สถานที่</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">สถานที่</label>
                 <input
                   value={edit.location}
                   onChange={(e) => setEdit({ ...edit, location: e.target.value })}
@@ -1603,7 +1603,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">สถานะ</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">สถานะ</label>
                 <select
                   value={edit.status}
                   onChange={(e) => setEdit({ ...edit, status: e.target.value })}
@@ -1615,7 +1615,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">เวลาโดยประมาณ</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">เวลาโดยประมาณ</label>
                 <input
                   type="time"
                   value={edit.incidentTime}
@@ -1624,7 +1624,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">แผนก/หน่วยงาน</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">แผนก/หน่วยงาน</label>
                 <input
                   value={edit.department}
                   onChange={(e) => setEdit({ ...edit, department: e.target.value })}
@@ -1633,7 +1633,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               </div>
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ระดับความรุนแรง</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความรุนแรง</label>
               <select
                 value={edit.severity}
                 onChange={(e) => setEdit({ ...edit, severity: e.target.value })}
@@ -1643,7 +1643,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">เหตุการณ์ที่เกิดขึ้น</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">เหตุการณ์ที่เกิดขึ้น</label>
               <textarea
                 rows={3}
                 value={edit.description}
@@ -1652,7 +1652,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">การปฐมพยาบาลเบื้องต้นที่ทำไปแล้ว</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">การปฐมพยาบาลเบื้องต้นที่ทำไปแล้ว</label>
               <textarea
                 rows={2}
                 value={edit.firstAidGiven}
@@ -1661,7 +1661,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">สาเหตุเบื้องต้นที่คาดว่าเป็นไปได้</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">สาเหตุเบื้องต้นที่คาดว่าเป็นไปได้</label>
               <textarea
                 rows={2}
                 value={edit.probableCause}
@@ -1671,7 +1671,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">ชื่อผู้แจ้ง (หัวหน้างาน)</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อผู้แจ้ง (หัวหน้างาน)</label>
                 <input
                   value={edit.reporterName}
                   onChange={(e) => setEdit({ ...edit, reporterName: e.target.value })}
@@ -1679,7 +1679,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">เบอร์ติดต่อกลับ</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">เบอร์ติดต่อกลับ</label>
                 <input
                   value={edit.reporterPhone}
                   onChange={(e) => setEdit({ ...edit, reporterPhone: e.target.value })}
@@ -1765,7 +1765,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
             <p className="text-xs font-bold text-slate-600 mb-2">เพิ่มพนักงานที่ได้รับบาดเจ็บ</p>
             <div className="grid sm:grid-cols-2 gap-2 mb-2">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">พนักงาน</label>
                 <select
                   value={newInjured.employeeId}
                   onChange={(e) => setNewInjured({ ...newInjured, employeeId: e.target.value })}
@@ -1779,7 +1779,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                 )}
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">ส่วนของร่างกายที่บาดเจ็บ</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ส่วนของร่างกายที่บาดเจ็บ</label>
                 <input
                   value={newInjured.bodyPart}
                   onChange={(e) => setNewInjured({ ...newInjured, bodyPart: e.target.value })}
@@ -1790,7 +1790,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
             </div>
             <div className="grid sm:grid-cols-2 gap-2 mb-2">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ลักษณะการบาดเจ็บ</label>
                 <input
                   value={newInjured.injuryType}
                   onChange={(e) => setNewInjured({ ...newInjured, injuryType: e.target.value })}
@@ -1799,7 +1799,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">จำนวนวันหยุดงาน</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">จำนวนวันหยุดงาน</label>
                 <input
                   type="number"
                   min="0"
@@ -1826,7 +1826,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
       <div>
         <p className="text-sm font-bold text-slate-900 mb-3">ความคืบหน้า</p>
         <Card className="mb-4">
-          <label className="text-xs text-slate-500 block mb-1">บันทึกความคืบหน้าใหม่</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">บันทึกความคืบหน้าใหม่</label>
           <textarea
             rows={2}
             value={progressNote}
@@ -1836,7 +1836,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
           />
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-500">เปลี่ยนสถานะไปด้วย (ไม่บังคับ):</label>
+              <label className="text-xs font-bold text-slate-500">เปลี่ยนสถานะไปด้วย (ไม่บังคับ):</label>
               <select
                 value={progressStatus}
                 onChange={(e) => setProgressStatus(e.target.value)}
@@ -2027,7 +2027,7 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">พนักงาน</label>
               <select
                 value={form.employeeId}
                 onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
@@ -2038,7 +2038,7 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">อุปกรณ์ที่ไม่ได้สวมใส่</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">อุปกรณ์ที่ไม่ได้สวมใส่</label>
               <input
                 value={form.ppeName}
                 onChange={(e) => setForm({ ...form, ppeName: e.target.value })}
@@ -2049,7 +2049,7 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">สถานที่พบเหตุ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">สถานที่พบเหตุ</label>
               <select
                 value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
@@ -2060,7 +2060,7 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">การดำเนินการ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">การดำเนินการ</label>
               <select
                 value={form.action}
                 onChange={(e) => setForm({ ...form, action: e.target.value })}
@@ -2072,7 +2072,7 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">วันที่พบ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">วันที่พบ</label>
               <input
                 type="date"
                 value={form.date}
@@ -2082,7 +2082,7 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
             </div>
           </div>
           <div className="mb-4">
-            <label className="text-xs text-slate-500 block mb-1">หมายเหตุ</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">หมายเหตุ</label>
             <textarea
               rows={2}
               value={form.notes}
@@ -2197,7 +2197,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
 
         <div className="grid sm:grid-cols-2 gap-3 mb-3">
           <div>
-            <label className="text-xs text-slate-500 block mb-1">พนักงานผู้รับมอบ</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">พนักงานผู้รับมอบ</label>
             <select
               value={form.employeeId}
               onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
@@ -2208,7 +2208,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">ประเภท/รุ่นอุปกรณ์</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ประเภท/รุ่นอุปกรณ์</label>
             <select
               value={form.catalogId}
               onChange={(e) => setForm({ ...form, catalogId: e.target.value })}
@@ -2222,7 +2222,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
 
         <div className="grid sm:grid-cols-3 gap-3 mb-3">
           <div>
-            <label className="text-xs text-slate-500 block mb-1">จำนวน</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">จำนวน</label>
             <input
               type="number" min="1"
               value={form.quantity}
@@ -2231,7 +2231,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
             />
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">วันที่รับ</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">วันที่รับ</label>
             <input
               type="date"
               value={form.receivedDate}
@@ -2240,7 +2240,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
             />
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">เหตุผลการเบิก</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">เหตุผลการเบิก</label>
             <select
               value={form.reason}
               onChange={(e) => setForm({ ...form, reason: e.target.value })}
@@ -2372,7 +2372,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
         <div className="border border-slate-200 rounded-lg p-3 mb-3 space-y-3">
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ชื่อประเภทอุปกรณ์</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อประเภทอุปกรณ์</label>
               <select
                 value={catalogForm.name}
                 onChange={(e) => setCatalogForm({ ...catalogForm, name: e.target.value })}
@@ -2382,7 +2382,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ชื่อรุ่น</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อรุ่น</label>
               <input
                 value={catalogForm.model}
                 onChange={(e) => setCatalogForm({ ...catalogForm, model: e.target.value })}
@@ -2393,7 +2393,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">มาตรฐานอ้างอิง</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">มาตรฐานอ้างอิง</label>
               <input
                 value={catalogForm.standard}
                 onChange={(e) => setCatalogForm({ ...catalogForm, standard: e.target.value })}
@@ -2402,7 +2402,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">อายุการใช้งาน (วัน)</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">อายุการใช้งาน (วัน)</label>
               <input
                 type="number" min="1"
                 value={catalogForm.lifespanDays}
@@ -2638,7 +2638,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               </button>
             </div>
             <div className="mb-3">
-              <label className="text-xs text-slate-500 block mb-1">ผลตรวจ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ผลตรวจ</label>
               <div className="flex gap-2">
                 {["ผ่าน", "ผ่านแบบมีข้อสังเกต", "ไม่ผ่าน"].map((r) => (
                   <button
@@ -2654,7 +2654,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               </div>
             </div>
             <div className="mb-3">
-              <label className="text-xs text-slate-500 block mb-1">สิ่งที่พบ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">สิ่งที่พบ</label>
               <textarea
                 rows={2}
                 value={form.findings}
@@ -2664,7 +2664,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               />
             </div>
             <div className="mb-3">
-              <label className="text-xs text-slate-500 block mb-1">การซ่อม / เปลี่ยนอะไหล่</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">การซ่อม / เปลี่ยนอะไหล่</label>
               <textarea
                 rows={2}
                 value={form.action}
@@ -2675,7 +2675,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
             </div>
             {needsDeadline && (
               <div className="mb-4">
-                <label className="text-xs text-slate-500 block mb-1">
+                <label className="text-xs font-bold text-slate-500 block mb-1">
                   กำหนดแก้ไขให้เสร็จภายในวันที่ <span className="text-red-600">(บังคับกรอกเมื่อไม่ผ่าน)</span>
                 </label>
                 <input
@@ -2759,7 +2759,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ประเภทอุปกรณ์</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ประเภทอุปกรณ์</label>
               <select
                 value={addForm.name}
                 onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
@@ -2769,7 +2769,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">รหัสอุปกรณ์</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">รหัสอุปกรณ์</label>
               <input
                 value={addForm.code}
                 onChange={(e) => setAddForm({ ...addForm, code: e.target.value })}
@@ -2780,7 +2780,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ตำแหน่งติดตั้ง</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ตำแหน่งติดตั้ง</label>
               <input
                 value={addForm.location}
                 onChange={(e) => setAddForm({ ...addForm, location: e.target.value })}
@@ -2789,7 +2789,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ยี่ห้อ / รุ่น</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ยี่ห้อ / รุ่น</label>
               <input
                 value={addForm.brand}
                 onChange={(e) => setAddForm({ ...addForm, brand: e.target.value })}
@@ -2799,7 +2799,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
             </div>
           </div>
           <div className="mb-4">
-            <label className="text-xs text-slate-500 block mb-1">รอบตรวจ</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">รอบตรวจ</label>
             <select
               value={addForm.frequency}
               onChange={(e) => setAddForm({ ...addForm, frequency: e.target.value })}
@@ -2958,7 +2958,7 @@ function ChecklistPage() {
       <Card className="max-w-xl">
         <div className="grid sm:grid-cols-2 gap-3 mb-4">
           <div>
-            <label className="text-xs text-slate-500 block mb-1">ชื่อโครงการ / งาน</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อโครงการ / งาน</label>
             <input
               value={header.projectName}
               disabled={headerLocked}
@@ -2968,7 +2968,7 @@ function ChecklistPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">ตำแหน่งสถานที่</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ตำแหน่งสถานที่</label>
             <input
               value={header.location}
               disabled={headerLocked}
@@ -2978,7 +2978,7 @@ function ChecklistPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">ประเภทงานเสี่ยงสูง</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ประเภทงานเสี่ยงสูง</label>
             <select
               value={header.workType}
               disabled={headerLocked}
@@ -2989,7 +2989,7 @@ function ChecklistPage() {
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">วันที่จะเข้าทำงาน</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">วันที่จะเข้าทำงาน</label>
             <input
               type="date"
               value={header.scheduledDate}
@@ -2999,7 +2999,7 @@ function ChecklistPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">เวลาเริ่มงาน</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">เวลาเริ่มงาน</label>
             <input
               type="time"
               value={header.scheduledStart}
@@ -3009,7 +3009,7 @@ function ChecklistPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">เวลาสิ้นสุดงาน (โดยประมาณ)</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">เวลาสิ้นสุดงาน (โดยประมาณ)</label>
             <input
               type="time"
               value={header.scheduledEnd}
@@ -3078,7 +3078,7 @@ function ChecklistPage() {
               ))}
             </div>
 
-            <label className="text-xs text-slate-500 block mb-1">หมายเหตุ / ข้อบกพร่องที่พบ</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">หมายเหตุ / ข้อบกพร่องที่พบ</label>
             <textarea
               rows={2}
               value={notes}
@@ -3094,7 +3094,7 @@ function ChecklistPage() {
 
             {needsDeadline && (
               <div className="mb-4">
-                <label className="text-xs text-slate-500 block mb-1">
+                <label className="text-xs font-bold text-slate-500 block mb-1">
                   กำหนดแก้ไขให้เสร็จภายในวันที่ <span className="text-red-600">(บังคับกรอกเมื่อมีข้อไม่ผ่าน)</span>
                 </label>
                 <input
@@ -3535,7 +3535,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
           </div>
           <div className="grid sm:grid-cols-4 gap-3 mb-4">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">รหัสพนักงาน</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">รหัสพนักงาน</label>
               <input
                 value={form.code}
                 onChange={(e) => setForm({ ...form, code: e.target.value })}
@@ -3544,7 +3544,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ชื่อ-สกุล</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อ-สกุล</label>
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -3553,7 +3553,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ตำแหน่ง</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ตำแหน่ง</label>
               <input
                 value={form.position}
                 onChange={(e) => setForm({ ...form, position: e.target.value })}
@@ -3562,7 +3562,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">แผนก / หน่วยงาน</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">แผนก / หน่วยงาน</label>
               <input
                 value={form.department}
                 onChange={(e) => setForm({ ...form, department: e.target.value })}
@@ -3571,7 +3571,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">สถานที่ประจำ</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">สถานที่ประจำ</label>
               <select
                 value={form.primaryLocationId}
                 onChange={(e) => setForm({ ...form, primaryLocationId: e.target.value })}
@@ -3766,7 +3766,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
 
       <div className="grid sm:grid-cols-3 gap-3 mb-3">
         <div>
-          <label className="text-xs text-slate-500 block mb-1">ประเภทการตรวจวัด</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">ประเภทการตรวจวัด</label>
           <select
             value={shared.measurementType}
             onChange={(e) => setShared({ ...shared, measurementType: e.target.value })}
@@ -3776,7 +3776,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
           </select>
         </div>
         <div>
-          <label className="text-xs text-slate-500 block mb-1">หน่วย</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">หน่วย</label>
           <input
             value={shared.unit}
             onChange={(e) => setShared({ ...shared, unit: e.target.value })}
@@ -3785,7 +3785,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
           />
         </div>
         <div>
-          <label className="text-xs text-slate-500 block mb-1">ค่ามาตรฐาน (ถ้ามี)</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">ค่ามาตรฐาน (ถ้ามี)</label>
           <input
             type="number"
             value={shared.standardLimit}
@@ -3797,7 +3797,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
 
       <div className="grid sm:grid-cols-2 gap-3 mb-4">
         <div>
-          <label className="text-xs text-slate-500 block mb-1">วันที่ตรวจวัด</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">วันที่ตรวจวัด</label>
           <input
             type="date"
             value={shared.measuredAt}
@@ -3806,7 +3806,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
           />
         </div>
         <div>
-          <label className="text-xs text-slate-500 block mb-1">กำหนดตรวจรอบถัดไป</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">กำหนดตรวจรอบถัดไป</label>
           <input
             type="date"
             value={shared.nextDue}
@@ -3818,7 +3818,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
 
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
-          <label className="text-xs text-slate-500">จุดย่อยที่เข้าไปตรวจวัด</label>
+          <label className="text-xs font-bold text-slate-500">จุดย่อยที่เข้าไปตรวจวัด</label>
           <button onClick={addPoint} className="flex items-center gap-1 text-xs text-slate-600 underline hover:text-slate-900">
             <Plus size={13} /> เพิ่มจุดย่อย
           </button>
@@ -3864,7 +3864,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
       </div>
 
       <div className="mb-4">
-        <label className="text-xs text-slate-500 block mb-1">แผนผังตำแหน่งจุดย่อย (ถ้ามี)</label>
+        <label className="text-xs font-bold text-slate-500 block mb-1">แผนผังตำแหน่งจุดย่อย (ถ้ามี)</label>
         <input ref={planInputRef} type="file" accept="image/*,.pdf" onChange={handlePlanFileChange} className="hidden" />
         {planFile ? (
           <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-sm">
@@ -3885,7 +3885,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
       </div>
 
       <div className="mb-4">
-        <label className="text-xs text-slate-500 block mb-1">หมายเหตุ</label>
+        <label className="text-xs font-bold text-slate-500 block mb-1">หมายเหตุ</label>
         <textarea
           rows={2}
           value={shared.notes}
@@ -3985,7 +3985,7 @@ function MeasurementRecordCard({ record, showLocationName, locationName, onEdit,
 
       {failCount > 0 && onUpdateStatus && (
         <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
-          <label className="text-xs text-slate-500">สถานะการแก้ไขปัจจุบัน:</label>
+          <label className="text-xs font-bold text-slate-500">สถานะการแก้ไขปัจจุบัน:</label>
           <select
             value={record.correctionStatus || "none"}
             onChange={(e) => onUpdateStatus(e.target.value)}
@@ -4161,7 +4161,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
           {!editingAssessment ? (
             <div className="space-y-3">
               <div>
-                <p className="text-xs text-slate-500 mb-1.5">รูปแบบความเสี่ยงที่เกี่ยวข้อง</p>
+                <p className="text-xs font-bold text-slate-500 mb-1.5">รูปแบบความเสี่ยงที่เกี่ยวข้อง</p>
                 <div className="flex flex-wrap gap-1.5">
                   {location.hazards.length === 0 ? (
                     <span className="text-sm text-slate-400">ไม่ได้ระบุ</span>
@@ -4173,7 +4173,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                 </div>
               </div>
               <div>
-                <p className="text-xs text-slate-500 mb-1.5">ประเภท PPE ที่ต้องใส่</p>
+                <p className="text-xs font-bold text-slate-500 mb-1.5">ประเภท PPE ที่ต้องใส่</p>
                 <div className="flex flex-wrap gap-1.5">
                   {location.ppeRequired.length === 0 ? (
                     <span className="text-sm text-slate-400">ไม่ได้ระบุ</span>
@@ -4195,7 +4195,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
           ) : (
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">รูปแบบความเสี่ยงที่เกี่ยวข้อง</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">รูปแบบความเสี่ยงที่เกี่ยวข้อง</label>
                 <div className="flex flex-wrap gap-2">
                   {hazardOptions.map((h) => (
                     <button
@@ -4211,7 +4211,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                 </div>
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">ประเภท PPE ที่ต้องใส่</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ประเภท PPE ที่ต้องใส่</label>
                 <div className="flex flex-wrap gap-2">
                   {ppeTypeOptions.map((p) => (
                     <button
@@ -4227,7 +4227,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                 </div>
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">ระดับความเสี่ยง</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความเสี่ยง</label>
                 <div className="flex gap-2 flex-wrap">
                   {riskLevelOptions.map((r) => (
                     <button
@@ -4243,7 +4243,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                 </div>
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">สิ่งที่พบ</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">สิ่งที่พบ</label>
                 <textarea
                   rows={2}
                   value={form.findings}
@@ -4252,7 +4252,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">มาตรการควบคุมความเสี่ยง</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">มาตรการควบคุมความเสี่ยง</label>
                 <textarea
                   rows={2}
                   value={form.controlMeasures}
@@ -4261,7 +4261,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">กำหนดประเมินรอบถัดไป</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">กำหนดประเมินรอบถัดไป</label>
                 <input
                   type="date"
                   value={form.nextDue}
@@ -4458,7 +4458,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">ชื่อสถานที่</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อสถานที่</label>
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -4467,7 +4467,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">อาคาร/โซน</label>
+              <label className="text-xs font-bold text-slate-500 block mb-1">อาคาร/โซน</label>
               <input
                 value={form.building}
                 onChange={(e) => setForm({ ...form, building: e.target.value })}
@@ -4477,7 +4477,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
             </div>
           </div>
           <div className="mb-3">
-            <label className="text-xs text-slate-500 block mb-1">คำอธิบาย</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">คำอธิบาย</label>
             <textarea
               rows={2}
               value={form.description}
@@ -4487,7 +4487,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
             />
           </div>
           <div className="mb-3">
-            <label className="text-xs text-slate-500 block mb-1">ระดับความเสี่ยงเริ่มต้น</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความเสี่ยงเริ่มต้น</label>
             <div className="flex gap-2 flex-wrap">
               {riskLevelOptions.map((r) => (
                 <button
@@ -4503,7 +4503,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
             </div>
           </div>
           <div className="mb-4">
-            <label className="text-xs text-slate-500 block mb-1">รูปแบบความเสี่ยงที่เกี่ยวข้อง</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">รูปแบบความเสี่ยงที่เกี่ยวข้อง</label>
             <div className="flex flex-wrap gap-2">
               {hazardOptions.map((h) => (
                 <button
@@ -4519,7 +4519,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
             </div>
           </div>
           <div className="mb-4">
-            <label className="text-xs text-slate-500 block mb-1">ประเภท PPE ที่ต้องใส่</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ประเภท PPE ที่ต้องใส่</label>
             <div className="flex flex-wrap gap-2">
               {ppeTypeOptions.map((p) => (
                 <button
@@ -4648,7 +4648,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
       {showForm && (
         <div className="space-y-3">
           <div className="max-w-2xl">
-            <label className="text-xs text-slate-500 block mb-1">สถานที่</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">สถานที่</label>
             <select
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
@@ -4783,7 +4783,7 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
             <p className="text-xs text-slate-400 mb-3">ระบุตำแหน่งงาน และ/หรือ ความเสี่ยง อย่างน้อย 1 อย่าง</p>
             <div className="grid sm:grid-cols-3 gap-3 mb-4">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">ตำแหน่งงาน (ไม่บังคับ)</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ตำแหน่งงาน (ไม่บังคับ)</label>
                 <select
                   value={form.position}
                   onChange={(e) => setForm({ ...form, position: e.target.value })}
@@ -4794,7 +4794,7 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
                 </select>
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">ความเสี่ยง (ไม่บังคับ)</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ความเสี่ยง (ไม่บังคับ)</label>
                 <select
                   value={form.hazardType}
                   onChange={(e) => setForm({ ...form, hazardType: e.target.value })}
@@ -4805,7 +4805,7 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
                 </select>
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">หลักสูตรที่ต้องอบรม</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1">หลักสูตรที่ต้องอบรม</label>
                 {courses.length === 0 ? (
                   <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
                     ยังไม่มีหลักสูตรในระบบ กรุณาติดต่อผู้ดูแลระบบให้เพิ่มหลักสูตรก่อน
@@ -4898,7 +4898,7 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
                                   <div key={cid} className="bg-slate-50 rounded-lg p-2.5 space-y-2 max-w-xs">
                                     <p className="text-xs font-medium text-slate-700">{courseName(cid)}</p>
                                     <div>
-                                      <label className="text-xs text-slate-500 block mb-0.5">วันที่อบรมผ่าน</label>
+                                      <label className="text-xs font-bold text-slate-500 block mb-0.5">วันที่อบรมผ่าน</label>
                                       <input
                                         type="date"
                                         value={recordForm.completionDate}
@@ -4907,7 +4907,7 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
                                       />
                                     </div>
                                     <div>
-                                      <label className="text-xs text-slate-500 block mb-0.5">วันหมดอายุ (ถ้ามี)</label>
+                                      <label className="text-xs font-bold text-slate-500 block mb-0.5">วันหมดอายุ (ถ้ามี)</label>
                                       <input
                                         type="date"
                                         value={recordForm.expiryDate}
@@ -5010,7 +5010,7 @@ function LoginPage({ onLogin, onGoToRegister }) {
         <p className="text-sm text-slate-500 mb-5">ระบบช่วยงาน จป.</p>
         {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-3">{error}</div>}
         <div className="mb-3">
-          <label className="text-xs text-slate-500 block mb-1">อีเมล</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">อีเมล</label>
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -5019,7 +5019,7 @@ function LoginPage({ onLogin, onGoToRegister }) {
           />
         </div>
         <div className="mb-4">
-          <label className="text-xs text-slate-500 block mb-1">รหัสผ่าน</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">รหัสผ่าน</label>
           <input
             type="password"
             value={password}
@@ -5111,7 +5111,7 @@ function RegisterPage({ onGoToLogin }) {
         </p>
         {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-3">{error}</div>}
         <div className="mb-3">
-          <label className="text-xs text-slate-500 block mb-1">ชื่อ-สกุลผู้ดูแลระบบของบริษัท (จป.)</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อ-สกุลผู้ดูแลระบบของบริษัท (จป.)</label>
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -5119,7 +5119,7 @@ function RegisterPage({ onGoToLogin }) {
           />
         </div>
         <div className="mb-3">
-          <label className="text-xs text-slate-500 block mb-1">ชื่อบริษัท</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อบริษัท</label>
           <input
             value={form.companyName}
             onChange={(e) => setForm({ ...form, companyName: e.target.value })}
@@ -5128,7 +5128,7 @@ function RegisterPage({ onGoToLogin }) {
           />
         </div>
         <div className="mb-3">
-          <label className="text-xs text-slate-500 block mb-1">อีเมล</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">อีเมล</label>
           <input
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -5136,7 +5136,7 @@ function RegisterPage({ onGoToLogin }) {
           />
         </div>
         <div className="mb-4">
-          <label className="text-xs text-slate-500 block mb-1">รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
           <input
             type="password"
             value={form.password}
@@ -5408,7 +5408,7 @@ function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissio
         <Card>
           <p className="text-sm font-bold text-slate-900 mb-1">ข้อจำกัดการบันทึกข้อมูล</p>
           <p className="text-xs text-slate-400 mb-3">เว้นว่างไว้ = ไม่จำกัดจำนวน</p>
-          <label className="text-xs text-slate-500 block mb-1">จำนวนพนักงานสูงสุดที่บันทึกได้</label>
+          <label className="text-xs font-bold text-slate-500 block mb-1">จำนวนพนักงานสูงสุดที่บันทึกได้</label>
           <input
             type="number"
             min="0"
