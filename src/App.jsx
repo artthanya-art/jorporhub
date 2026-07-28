@@ -901,7 +901,7 @@ function Dashboard({
   return (
     <div className="space-y-5">
       <div className="bg-gradient-to-r from-slate-900 to-slate-700 rounded-xl p-5 shadow-md text-white">
-        <h1 className="text-lg font-semibold">สวัสดี {currentUser?.name ?? ""}</h1>
+        <h1 className="text-lg font-bold">สวัสดี {currentUser?.name ?? ""}</h1>
         <p className="text-sm text-slate-300 mt-0.5">{currentUser?.companyName ?? "-"} · อัปเดตล่าสุด {formatThaiDate(todayIso())}</p>
       </div>
 
@@ -945,7 +945,7 @@ function Dashboard({
 
       <div className="grid sm:grid-cols-2 gap-4">
         <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-3">อุบัติเหตุล่าสุด</p>
+          <p className="text-sm font-bold text-slate-900 mb-3">อุบัติเหตุล่าสุด</p>
           <div className="space-y-3">
             {[...incidents].sort((a, b) => (a.incidentDate < b.incidentDate ? 1 : -1)).slice(0, 3).map((inc) => (
               <div key={inc.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
@@ -961,7 +961,7 @@ function Dashboard({
         </Card>
 
         <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-3">อุปกรณ์ที่ต้องเฝ้าระวัง</p>
+          <p className="text-sm font-bold text-slate-900 mb-3">อุปกรณ์ที่ต้องเฝ้าระวัง</p>
           <div className="space-y-3">
             {equipment.filter((e) => e.status !== "ปกติ").map((eq) => (
               <div key={eq.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
@@ -979,7 +979,7 @@ function Dashboard({
         </Card>
 
         <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-3">สถานที่ที่ต้องเฝ้าระวัง</p>
+          <p className="text-sm font-bold text-slate-900 mb-3">สถานที่ที่ต้องเฝ้าระวัง</p>
           <div className="space-y-3">
             {highRiskLocations.map((l) => (
               <div key={l.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
@@ -995,7 +995,7 @@ function Dashboard({
         </Card>
 
         <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-3">การกระทำที่ไม่ปลอดภัยล่าสุด</p>
+          <p className="text-sm font-bold text-slate-900 mb-3">การกระทำที่ไม่ปลอดภัยล่าสุด</p>
           <div className="space-y-3">
             {noncompliance.slice(0, 3).map((r) => (
               <div key={r.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
@@ -1012,7 +1012,7 @@ function Dashboard({
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">หลักสูตรที่ยังไม่ผ่านตาม Training Matrix</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">หลักสูตรที่ยังไม่ผ่านตาม Training Matrix</p>
         <Card className="p-0 overflow-hidden">
           {trainingGaps.length === 0 ? (
             <p className="text-sm text-slate-400 p-4">พนักงานทุกคนผ่านหลักสูตรที่กำหนดครบแล้ว</p>
@@ -1021,9 +1021,9 @@ function Dashboard({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                    <th className="px-4 py-2.5 font-medium">หลักสูตร</th>
-                    <th className="px-4 py-2.5 font-medium">สถานะ</th>
+                    <th className="px-4 py-2.5 font-bold">พนักงาน</th>
+                    <th className="px-4 py-2.5 font-bold">หลักสูตร</th>
+                    <th className="px-4 py-2.5 font-bold">สถานะ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1044,7 +1044,7 @@ function Dashboard({
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ผลการตรวจวัดสิ่งแวดล้อมที่ไม่ผ่าน</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ผลการตรวจวัดสิ่งแวดล้อมที่ไม่ผ่าน</p>
         <Card className="p-0 overflow-hidden">
           {envFailingMeasurements.length === 0 ? (
             <p className="text-sm text-slate-400 p-4">ยังไม่มีผลตรวจวัดที่ไม่ผ่านมาตรฐาน</p>
@@ -1053,10 +1053,10 @@ function Dashboard({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">สถานที่</th>
-                    <th className="px-4 py-2.5 font-medium">ประเภทการตรวจวัด</th>
-                    <th className="px-4 py-2.5 font-medium">จุดที่ไม่ผ่าน</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่วัด</th>
+                    <th className="px-4 py-2.5 font-bold">สถานที่</th>
+                    <th className="px-4 py-2.5 font-bold">ประเภทการตรวจวัด</th>
+                    <th className="px-4 py-2.5 font-bold">จุดที่ไม่ผ่าน</th>
+                    <th className="px-4 py-2.5 font-bold">วันที่วัด</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1176,7 +1176,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">ทะเบียนอุบัติเหตุ</h1>
+          <h1 className="text-lg font-bold text-slate-900">ทะเบียนอุบัติเหตุ</h1>
           <div className="flex items-center gap-2 mt-1.5">
             <label className="text-sm text-slate-500">วันเกิดเหตุล่าสุด:</label>
             <span className="text-sm text-slate-700">
@@ -1195,7 +1195,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
       {showForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">รายงานอุบัติเหตุใหม่</p>
+            <p className="text-sm font-bold text-slate-900">รายงานอุบัติเหตุใหม่</p>
             <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -1292,7 +1292,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
           </div>
           <div className="mb-4 border border-slate-200 rounded-lg overflow-hidden">
             <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
-              <p className="text-xs font-medium text-slate-600">พนักงานที่ได้รับบาดเจ็บ/เกี่ยวข้อง (ถ้ามี)</p>
+              <p className="text-xs font-bold text-slate-600">พนักงานที่ได้รับบาดเจ็บ/เกี่ยวข้อง (ถ้ามี)</p>
             </div>
             {form.injuredEmployees.length > 0 && (
               <div className="divide-y divide-slate-100">
@@ -1440,12 +1440,12 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-left">
-              <th className="px-4 py-2.5 font-medium">สถานที่</th>
-              <th className="px-4 py-2.5 font-medium">ลักษณะ</th>
-              <th className="px-4 py-2.5 font-medium">ความรุนแรง</th>
-              <th className="px-4 py-2.5 font-medium">วันที่</th>
-              <th className="px-4 py-2.5 font-medium">หยุดงาน</th>
-              <th className="px-4 py-2.5 font-medium">สถานะ</th>
+              <th className="px-4 py-2.5 font-bold">สถานที่</th>
+              <th className="px-4 py-2.5 font-bold">ลักษณะ</th>
+              <th className="px-4 py-2.5 font-bold">ความรุนแรง</th>
+              <th className="px-4 py-2.5 font-bold">วันที่</th>
+              <th className="px-4 py-2.5 font-bold">หยุดงาน</th>
+              <th className="px-4 py-2.5 font-bold">สถานะ</th>
               <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
@@ -1561,7 +1561,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
 
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">{incident.location} · {incident.type}</h1>
+          <h1 className="text-lg font-bold text-slate-900">{incident.location} · {incident.type}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {formatThaiDate(incident.incidentDate)}
             {incident.incidentTime ? ` ${incident.incidentTime} น.` : ""} · ความรุนแรง {incident.severity}
@@ -1573,7 +1573,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
 
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-slate-900">รายละเอียดและสถานะ</p>
+          <p className="text-sm font-bold text-slate-900">รายละเอียดและสถานะ</p>
           {!editing && (
             <button onClick={() => setEditing(true)} className="text-xs text-slate-500 underline hover:text-slate-700">
               แก้ไข
@@ -1700,17 +1700,17 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
       </Card>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">พนักงานที่ได้รับบาดเจ็บ</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">พนักงานที่ได้รับบาดเจ็บ</p>
         <Card className="p-0 overflow-hidden">
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-left">
-                <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                <th className="px-4 py-2.5 font-medium">ตำแหน่งงาน</th>
-                <th className="px-4 py-2.5 font-medium">ส่วนของร่างกายที่บาดเจ็บ</th>
-                <th className="px-4 py-2.5 font-medium">ลักษณะการบาดเจ็บ</th>
-                <th className="px-4 py-2.5 font-medium">จำนวนวันหยุดงาน</th>
+                <th className="px-4 py-2.5 font-bold">พนักงาน</th>
+                <th className="px-4 py-2.5 font-bold">ตำแหน่งงาน</th>
+                <th className="px-4 py-2.5 font-bold">ส่วนของร่างกายที่บาดเจ็บ</th>
+                <th className="px-4 py-2.5 font-bold">ลักษณะการบาดเจ็บ</th>
+                <th className="px-4 py-2.5 font-bold">จำนวนวันหยุดงาน</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -1762,7 +1762,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
           </table>
           </div>
           <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
-            <p className="text-xs font-medium text-slate-600 mb-2">เพิ่มพนักงานที่ได้รับบาดเจ็บ</p>
+            <p className="text-xs font-bold text-slate-600 mb-2">เพิ่มพนักงานที่ได้รับบาดเจ็บ</p>
             <div className="grid sm:grid-cols-2 gap-2 mb-2">
               <div>
                 <label className="text-xs text-slate-500 block mb-1">พนักงาน</label>
@@ -1824,7 +1824,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ความคืบหน้า</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ความคืบหน้า</p>
         <Card className="mb-4">
           <label className="text-xs text-slate-500 block mb-1">บันทึกความคืบหน้าใหม่</label>
           <textarea
@@ -1922,7 +1922,7 @@ function PpeByItemView({ employees, ppe }) {
               className="w-full flex items-center justify-between px-4 py-3 text-left"
             >
               <div>
-                <p className="text-sm font-semibold text-slate-900">{g.name}</p>
+                <p className="text-sm font-bold text-slate-900">{g.name}</p>
                 <p className="text-xs text-slate-500">จำนวนทั้งหมด {totalQuantity} · ถือครองโดย {g.items.length} คน</p>
               </div>
               <div className="flex items-center gap-3">
@@ -2020,7 +2020,7 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
       {showForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">บันทึกพบพนักงานไม่สวมใส่ PPE</p>
+            <p className="text-sm font-bold text-slate-900">บันทึกพบพนักงานไม่สวมใส่ PPE</p>
             <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -2111,12 +2111,12 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-left">
-              <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-              <th className="px-4 py-2.5 font-medium">อุปกรณ์ที่ไม่ได้สวมใส่</th>
-              <th className="px-4 py-2.5 font-medium">สถานที่</th>
-              <th className="px-4 py-2.5 font-medium">วันที่พบ</th>
-              <th className="px-4 py-2.5 font-medium">การดำเนินการ</th>
-              <th className="px-4 py-2.5 font-medium">สะสม</th>
+              <th className="px-4 py-2.5 font-bold">พนักงาน</th>
+              <th className="px-4 py-2.5 font-bold">อุปกรณ์ที่ไม่ได้สวมใส่</th>
+              <th className="px-4 py-2.5 font-bold">สถานที่</th>
+              <th className="px-4 py-2.5 font-bold">วันที่พบ</th>
+              <th className="px-4 py-2.5 font-bold">การดำเนินการ</th>
+              <th className="px-4 py-2.5 font-bold">สะสม</th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
@@ -2193,7 +2193,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
   return (
     <div className="space-y-5">
       <Card className="max-w-2xl">
-        <p className="text-sm font-semibold text-slate-900 mb-4">บันทึกการเบิก PPE</p>
+        <p className="text-sm font-bold text-slate-900 mb-4">บันทึกการเบิก PPE</p>
 
         <div className="grid sm:grid-cols-2 gap-3 mb-3">
           <div>
@@ -2279,7 +2279,7 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
       </Card>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติการเบิก PPE</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ประวัติการเบิก PPE</p>
         {sortedPpe.length === 0 ? (
           <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติการเบิก PPE</p></Card>
         ) : (
@@ -2288,13 +2288,13 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                    <th className="px-4 py-2.5 font-medium">อุปกรณ์</th>
-                    <th className="px-4 py-2.5 font-medium">มาตรฐาน</th>
-                    <th className="px-4 py-2.5 font-medium">จำนวน</th>
-                    <th className="px-4 py-2.5 font-medium">เหตุผลเบิก</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่รับ</th>
-                    <th className="px-4 py-2.5 font-medium">วันหมดอายุ</th>
+                    <th className="px-4 py-2.5 font-bold">พนักงาน</th>
+                    <th className="px-4 py-2.5 font-bold">อุปกรณ์</th>
+                    <th className="px-4 py-2.5 font-bold">มาตรฐาน</th>
+                    <th className="px-4 py-2.5 font-bold">จำนวน</th>
+                    <th className="px-4 py-2.5 font-bold">เหตุผลเบิก</th>
+                    <th className="px-4 py-2.5 font-bold">วันที่รับ</th>
+                    <th className="px-4 py-2.5 font-bold">วันหมดอายุ</th>
                     <th className="px-4 py-2.5"></th>
                   </tr>
                 </thead>
@@ -2359,7 +2359,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
   return (
     <Card className="max-w-2xl">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-semibold text-slate-900">ประเภท/รุ่นอุปกรณ์ในระบบ</p>
+        <p className="text-sm font-bold text-slate-900">ประเภท/รุ่นอุปกรณ์ในระบบ</p>
         <button
           onClick={() => setShowCatalogForm(true)}
           className="flex items-center gap-1.5 text-xs text-slate-600 underline hover:text-slate-900"
@@ -2514,7 +2514,7 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">ทะเบียน PPE</h1>
+      <h1 className="text-lg font-bold text-slate-900">ทะเบียน PPE</h1>
 
       <div className="flex gap-1 border-b border-slate-200">
         {tabs.map((t) => (
@@ -2546,7 +2546,7 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
 function UnsafeActsPage({ employees, locations, records, onAdd, onDelete }) {
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">บันทึกการกระทำที่ไม่ปลอดภัย</h1>
+      <h1 className="text-lg font-bold text-slate-900">บันทึกการกระทำที่ไม่ปลอดภัย</h1>
       <NoncomplianceView employees={employees} locations={locations} records={records} onAdd={onAdd} onDelete={onDelete} />
     </div>
   );
@@ -2595,7 +2595,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
 
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">{selected.code}</h1>
+            <h1 className="text-lg font-bold text-slate-900">{selected.code}</h1>
             <p className="text-sm text-slate-500 mt-0.5">{selected.location} · {selected.brand}</p>
           </div>
           <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
@@ -2618,7 +2618,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
         )}
 
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-900">ประวัติการตรวจสภาพ</p>
+          <p className="text-sm font-bold text-slate-900">ประวัติการตรวจสภาพ</p>
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
@@ -2630,7 +2630,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
         {showForm && (
           <Card>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-sm font-bold text-slate-900">
                 {isFollowUpNow ? "บันทึกผลตรวจซ้ำนอกรอบ" : "บันทึกผลตรวจใหม่"}
               </p>
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
@@ -2740,7 +2740,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-900">อุปกรณ์ความปลอดภัย</h1>
+        <h1 className="text-lg font-bold text-slate-900">อุปกรณ์ความปลอดภัย</h1>
         <button
           onClick={() => setShowAddForm(true)}
           className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
@@ -2752,7 +2752,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
       {showAddForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">เพิ่มอุปกรณ์ใหม่</p>
+            <p className="text-sm font-bold text-slate-900">เพิ่มอุปกรณ์ใหม่</p>
             <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -2851,11 +2851,11 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-left">
-              <th className="px-4 py-2.5 font-medium">อุปกรณ์ / รหัส</th>
-              <th className="px-4 py-2.5 font-medium">ตำแหน่งติดตั้ง</th>
-              <th className="px-4 py-2.5 font-medium">รอบตรวจ</th>
-              <th className="px-4 py-2.5 font-medium">กำหนดถัดไป</th>
-              <th className="px-4 py-2.5 font-medium">สถานะ</th>
+              <th className="px-4 py-2.5 font-bold">อุปกรณ์ / รหัส</th>
+              <th className="px-4 py-2.5 font-bold">ตำแหน่งติดตั้ง</th>
+              <th className="px-4 py-2.5 font-bold">รอบตรวจ</th>
+              <th className="px-4 py-2.5 font-bold">กำหนดถัดไป</th>
+              <th className="px-4 py-2.5 font-bold">สถานะ</th>
               <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
@@ -2953,7 +2953,7 @@ function ChecklistPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">แบบตรวจสภาพหน้างานก่อนเริ่มงานเสี่ยงสูง</h1>
+      <h1 className="text-lg font-bold text-slate-900">แบบตรวจสภาพหน้างานก่อนเริ่มงานเสี่ยงสูง</h1>
 
       <Card className="max-w-xl">
         <div className="grid sm:grid-cols-2 gap-3 mb-4">
@@ -3131,7 +3131,7 @@ function ChecklistPage() {
         {approved && (
           <div className="space-y-3">
             <div className="bg-slate-50 rounded-lg p-4 border border-slate-100 text-sm text-slate-700 space-y-1">
-              <p className="font-semibold text-slate-900 mb-1">สรุปสำหรับพิมพ์ประกอบใบอนุญาตเข้าทำงาน</p>
+              <p className="font-bold text-slate-900 mb-1">สรุปสำหรับพิมพ์ประกอบใบอนุญาตเข้าทำงาน</p>
               <p>โครงการ: {header.projectName || "-"}</p>
               <p>สถานที่: {header.location || "-"}</p>
               <p>ประเภทงาน: {header.workType}</p>
@@ -3176,12 +3176,12 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
       </button>
 
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">{employee.name} <span className="text-slate-400 font-normal text-base">· {employee.code || "-"}</span></h1>
+        <h1 className="text-lg font-bold text-slate-900">{employee.name} <span className="text-slate-400 font-normal text-base">· {employee.code || "-"}</span></h1>
         <p className="text-sm text-slate-500 mt-0.5">{employee.position} · {employee.department}</p>
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติรับมอบ PPE</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ประวัติรับมอบ PPE</p>
         {employeePpe.length === 0 ? (
           <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติรับมอบ PPE</p></Card>
         ) : (
@@ -3190,13 +3190,13 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">อุปกรณ์</th>
-                    <th className="px-4 py-2.5 font-medium">มาตรฐาน</th>
-                    <th className="px-4 py-2.5 font-medium">จำนวน</th>
-                    <th className="px-4 py-2.5 font-medium">เหตุผลเบิก</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่รับ</th>
-                    <th className="px-4 py-2.5 font-medium">วันหมดอายุ</th>
-                    <th className="px-4 py-2.5 font-medium">สถานะ</th>
+                    <th className="px-4 py-2.5 font-bold">อุปกรณ์</th>
+                    <th className="px-4 py-2.5 font-bold">มาตรฐาน</th>
+                    <th className="px-4 py-2.5 font-bold">จำนวน</th>
+                    <th className="px-4 py-2.5 font-bold">เหตุผลเบิก</th>
+                    <th className="px-4 py-2.5 font-bold">วันที่รับ</th>
+                    <th className="px-4 py-2.5 font-bold">วันหมดอายุ</th>
+                    <th className="px-4 py-2.5 font-bold">สถานะ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3222,7 +3222,7 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติการอบรม</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ประวัติการอบรม</p>
         {employeeTrainings.length === 0 ? (
           <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติการอบรม</p></Card>
         ) : (
@@ -3231,10 +3231,10 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">หลักสูตร</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่อบรมผ่าน</th>
-                    <th className="px-4 py-2.5 font-medium">วันหมดอายุ</th>
-                    <th className="px-4 py-2.5 font-medium">สถานะ</th>
+                    <th className="px-4 py-2.5 font-bold">หลักสูตร</th>
+                    <th className="px-4 py-2.5 font-bold">วันที่อบรมผ่าน</th>
+                    <th className="px-4 py-2.5 font-bold">วันหมดอายุ</th>
+                    <th className="px-4 py-2.5 font-bold">สถานะ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3257,7 +3257,7 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติไม่ปฏิบัติตาม</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ประวัติไม่ปฏิบัติตาม</p>
         {employeeNoncompliance.length === 0 ? (
           <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติไม่ปฏิบัติตาม</p></Card>
         ) : (
@@ -3266,10 +3266,10 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">อุปกรณ์ที่ไม่ได้สวมใส่</th>
-                    <th className="px-4 py-2.5 font-medium">สถานที่</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่พบ</th>
-                    <th className="px-4 py-2.5 font-medium">การดำเนินการ</th>
+                    <th className="px-4 py-2.5 font-bold">อุปกรณ์ที่ไม่ได้สวมใส่</th>
+                    <th className="px-4 py-2.5 font-bold">สถานที่</th>
+                    <th className="px-4 py-2.5 font-bold">วันที่พบ</th>
+                    <th className="px-4 py-2.5 font-bold">การดำเนินการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3291,7 +3291,7 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ประวัติอุบัติเหตุ</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ประวัติอุบัติเหตุ</p>
         {employeeIncidents.length === 0 ? (
           <Card><p className="text-sm text-slate-400">ยังไม่มีประวัติอุบัติเหตุ</p></Card>
         ) : (
@@ -3300,11 +3300,11 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-medium">วันที่</th>
-                    <th className="px-4 py-2.5 font-medium">สถานที่</th>
-                    <th className="px-4 py-2.5 font-medium">ลักษณะการบาดเจ็บ</th>
-                    <th className="px-4 py-2.5 font-medium">หยุดงาน</th>
-                    <th className="px-4 py-2.5 font-medium">สถานะเคส</th>
+                    <th className="px-4 py-2.5 font-bold">วันที่</th>
+                    <th className="px-4 py-2.5 font-bold">สถานที่</th>
+                    <th className="px-4 py-2.5 font-bold">ลักษณะการบาดเจ็บ</th>
+                    <th className="px-4 py-2.5 font-bold">หยุดงาน</th>
+                    <th className="px-4 py-2.5 font-bold">สถานะเคส</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3479,7 +3479,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-lg font-semibold text-slate-900">ทะเบียนพนักงาน</h1>
+        <h1 className="text-lg font-bold text-slate-900">ทะเบียนพนักงาน</h1>
         <div className="flex items-center gap-2">
           <input
             ref={fileInputRef}
@@ -3528,7 +3528,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
       {showForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">เพิ่มพนักงานใหม่</p>
+            <p className="text-sm font-bold text-slate-900">เพิ่มพนักงานใหม่</p>
             <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -3598,12 +3598,12 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-left">
-              <th className="px-4 py-2.5 font-medium">รหัสพนักงาน</th>
-              <th className="px-4 py-2.5 font-medium">ชื่อ-สกุล</th>
-              <th className="px-4 py-2.5 font-medium">ตำแหน่ง</th>
-              <th className="px-4 py-2.5 font-medium">แผนก</th>
-              <th className="px-4 py-2.5 font-medium">สถานที่ประจำ</th>
-              <th className="px-4 py-2.5 font-medium">PPE ที่ถือครอง</th>
+              <th className="px-4 py-2.5 font-bold">รหัสพนักงาน</th>
+              <th className="px-4 py-2.5 font-bold">ชื่อ-สกุล</th>
+              <th className="px-4 py-2.5 font-bold">ตำแหน่ง</th>
+              <th className="px-4 py-2.5 font-bold">แผนก</th>
+              <th className="px-4 py-2.5 font-bold">สถานที่ประจำ</th>
+              <th className="px-4 py-2.5 font-bold">PPE ที่ถือครอง</th>
               <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
@@ -3758,7 +3758,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
   return (
     <Card className="mb-4">
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-semibold text-slate-900">{isEditMode ? "แก้ไขผลตรวจวัด" : "บันทึกผลตรวจวัดใหม่"}</p>
+        <p className="text-sm font-bold text-slate-900">{isEditMode ? "แก้ไขผลตรวจวัด" : "บันทึกผลตรวจวัดใหม่"}</p>
         <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
           <X size={18} />
         </button>
@@ -3913,7 +3913,7 @@ function MeasurementRecordCard({ record, showLocationName, locationName, onEdit,
     <Card>
       <div className="flex items-start justify-between mb-2 flex-wrap gap-2">
         <div>
-          {showLocationName && <p className="text-sm font-semibold text-slate-900">{locationName}</p>}
+          {showLocationName && <p className="text-sm font-bold text-slate-900">{locationName}</p>}
           <p className="text-sm text-slate-700">
             {measurementTypeLabel[record.measurementType]}
             {record.standardLimit != null && <span className="text-slate-400"> · มาตรฐาน {record.standardLimit} {record.unit}</span>}
@@ -4097,7 +4097,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
 
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">{location.name}</h1>
+          <h1 className="text-lg font-bold text-slate-900">{location.name}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{location.building} · {location.description}</p>
           <p className="text-xs text-slate-400 mt-1">
             แก้ไขล่าสุด: {formatThaiDateTime(location.riskAssessment.updatedAt)} โดย {location.riskAssessment.updatedBy}
@@ -4107,7 +4107,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ภาพสถานที่</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ภาพสถานที่</p>
         <Card>
           <input
             ref={photoInputRef}
@@ -4149,7 +4149,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
 
       <div>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-slate-900">การประเมินความเสี่ยง</p>
+          <p className="text-sm font-bold text-slate-900">การประเมินความเสี่ยง</p>
           {!editingAssessment && (
             <button onClick={startEdit} className="text-xs text-slate-500 underline hover:text-slate-700">
               แก้ไข
@@ -4286,7 +4286,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">
+        <p className="text-sm font-bold text-slate-900 mb-3">
           ประวัติอุบัติเหตุในพื้นที่ <span className="text-xs font-normal text-slate-400">(ดึงจากทะเบียนอุบัติเหตุอัตโนมัติ)</span>
         </p>
         {locationIncidents.length === 0 ? (
@@ -4299,10 +4299,10 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-left">
-                  <th className="px-4 py-2.5 font-medium">วันที่</th>
-                  <th className="px-4 py-2.5 font-medium">ลักษณะ</th>
-                  <th className="px-4 py-2.5 font-medium">ความรุนแรง</th>
-                  <th className="px-4 py-2.5 font-medium">หยุดงาน</th>
+                  <th className="px-4 py-2.5 font-bold">วันที่</th>
+                  <th className="px-4 py-2.5 font-bold">ลักษณะ</th>
+                  <th className="px-4 py-2.5 font-bold">ความรุนแรง</th>
+                  <th className="px-4 py-2.5 font-bold">หยุดงาน</th>
                 </tr>
               </thead>
               <tbody>
@@ -4330,7 +4330,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
 
       <div>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-slate-900">ผลการตรวจวัดสิ่งแวดล้อม</p>
+          <p className="text-sm font-bold text-slate-900">ผลการตรวจวัดสิ่งแวดล้อม</p>
           <button
             onClick={() => setShowMeasurementForm(true)}
             className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
@@ -4439,7 +4439,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-900">ทะเบียนสถานที่ทำงาน</h1>
+        <h1 className="text-lg font-bold text-slate-900">ทะเบียนสถานที่ทำงาน</h1>
         <button
           onClick={() => setShowForm(true)}
           className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
@@ -4451,7 +4451,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
       {showForm && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">เพิ่มสถานที่ทำงานใหม่</p>
+            <p className="text-sm font-bold text-slate-900">เพิ่มสถานที่ทำงานใหม่</p>
             <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
@@ -4550,12 +4550,12 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-left">
-              <th className="px-4 py-2.5 font-medium">ชื่อสถานที่</th>
-              <th className="px-4 py-2.5 font-medium">อาคาร/โซน</th>
-              <th className="px-4 py-2.5 font-medium">รูปแบบความเสี่ยง</th>
-              <th className="px-4 py-2.5 font-medium">PPE ที่ต้องใส่</th>
-              <th className="px-4 py-2.5 font-medium">ระดับความเสี่ยง</th>
-              <th className="px-4 py-2.5 font-medium">ผลตรวจวัดสิ่งแวดล้อม</th>
+              <th className="px-4 py-2.5 font-bold">ชื่อสถานที่</th>
+              <th className="px-4 py-2.5 font-bold">อาคาร/โซน</th>
+              <th className="px-4 py-2.5 font-bold">รูปแบบความเสี่ยง</th>
+              <th className="px-4 py-2.5 font-bold">PPE ที่ต้องใส่</th>
+              <th className="px-4 py-2.5 font-bold">ระดับความเสี่ยง</th>
+              <th className="px-4 py-2.5 font-bold">ผลตรวจวัดสิ่งแวดล้อม</th>
               <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
@@ -4636,7 +4636,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-900">บันทึกผลการตรวจวัดสิ่งแวดล้อม</h1>
+        <h1 className="text-lg font-bold text-slate-900">บันทึกผลการตรวจวัดสิ่งแวดล้อม</h1>
         <button
           onClick={() => setShowForm(true)}
           className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
@@ -4684,7 +4684,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
         <div className="space-y-6">
           {typesPresent.map((type) => (
             <div key={type}>
-              <p className="text-sm font-semibold text-slate-900 mb-3">หมวด: {measurementTypeLabel[type]}</p>
+              <p className="text-sm font-bold text-slate-900 mb-3">หมวด: {measurementTypeLabel[type]}</p>
               <div className="space-y-4 pl-3 border-l-2 border-slate-100">
                 {Object.keys(grouped[type]).map((locId) => {
                   const records = [...grouped[type][locId]].sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
@@ -4759,11 +4759,11 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">Training Matrix</h1>
+      <h1 className="text-lg font-bold text-slate-900">Training Matrix</h1>
 
       <div>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-slate-900">ตารางกำหนดหลักสูตรตามตำแหน่ง/ความเสี่ยง</p>
+          <p className="text-sm font-bold text-slate-900">ตารางกำหนดหลักสูตรตามตำแหน่ง/ความเสี่ยง</p>
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800"
@@ -4775,7 +4775,7 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
         {showForm && (
           <Card className="mb-4">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold text-slate-900">เพิ่ม requirement ใหม่</p>
+              <p className="text-sm font-bold text-slate-900">เพิ่ม requirement ใหม่</p>
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={18} />
               </button>
@@ -4837,9 +4837,9 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-left">
-                  <th className="px-4 py-2.5 font-medium">ตำแหน่งงาน</th>
-                  <th className="px-4 py-2.5 font-medium">ความเสี่ยง</th>
-                  <th className="px-4 py-2.5 font-medium">หลักสูตรที่ต้องอบรม</th>
+                  <th className="px-4 py-2.5 font-bold">ตำแหน่งงาน</th>
+                  <th className="px-4 py-2.5 font-bold">ความเสี่ยง</th>
+                  <th className="px-4 py-2.5 font-bold">หลักสูตรที่ต้องอบรม</th>
                   <th className="px-4 py-2.5"></th>
                 </tr>
               </thead>
@@ -4863,16 +4863,16 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">สถานะการอบรมของพนักงาน</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">สถานะการอบรมของพนักงาน</p>
         <Card className="p-0 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-left">
-                  <th className="px-4 py-2.5 font-medium">พนักงาน</th>
-                  <th className="px-4 py-2.5 font-medium">ตำแหน่ง</th>
-                  <th className="px-4 py-2.5 font-medium">สถานที่ประจำ</th>
-                  <th className="px-4 py-2.5 font-medium">หลักสูตรที่ต้องอบรม</th>
+                  <th className="px-4 py-2.5 font-bold">พนักงาน</th>
+                  <th className="px-4 py-2.5 font-bold">ตำแหน่ง</th>
+                  <th className="px-4 py-2.5 font-bold">สถานที่ประจำ</th>
+                  <th className="px-4 py-2.5 font-bold">หลักสูตรที่ต้องอบรม</th>
                 </tr>
               </thead>
               <tbody>
@@ -5006,7 +5006,7 @@ function LoginPage({ onLogin, onGoToRegister }) {
   return (
     <div className="min-h-[600px] flex items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-sm">
-        <p className="text-lg font-semibold text-slate-900 mb-1">เข้าสู่ระบบ JorPor</p>
+        <p className="text-lg font-bold text-slate-900 mb-1">เข้าสู่ระบบ JorPor</p>
         <p className="text-sm text-slate-500 mb-5">ระบบช่วยงาน จป.</p>
         {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-3">{error}</div>}
         <div className="mb-3">
@@ -5088,7 +5088,7 @@ function RegisterPage({ onGoToLogin }) {
     return (
       <div className="min-h-[600px] flex items-center justify-center bg-slate-50 p-4">
         <Card className="w-full max-w-sm text-center">
-          <p className="text-lg font-semibold text-slate-900 mb-2">สมัครสำเร็จ</p>
+          <p className="text-lg font-bold text-slate-900 mb-2">สมัครสำเร็จ</p>
           <p className="text-sm text-slate-600 mb-5">
             บัญชีของคุณกำลังรอการอนุมัติจากผู้ดูแลระบบ จะเข้าสู่ระบบได้หลังได้รับการอนุมัติแล้ว
             (เริ่มต้นด้วยแพ็กเกจ Free) — ถ้าระบบยืนยันอีเมลไว้ อย่าลืมเช็กอีเมลเพื่อยืนยันตัวตนก่อนด้วย
@@ -5104,7 +5104,7 @@ function RegisterPage({ onGoToLogin }) {
   return (
     <div className="min-h-[600px] flex items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-sm">
-        <p className="text-lg font-semibold text-slate-900 mb-1">สมัครใช้งาน</p>
+        <p className="text-lg font-bold text-slate-900 mb-1">สมัครใช้งาน</p>
         <p className="text-sm text-slate-500 mb-5">
           1 บัญชี ต่อ 1 บริษัท — ข้อมูลของแต่ละบริษัทแยกจากกันโดยสมบูรณ์ ต้องได้รับการอนุมัติจาก
           ผู้ดูแลระบบก่อนจึงจะเข้าใช้งานได้
@@ -5178,7 +5178,7 @@ function UserDetail({ user, tierPermissions, onBack, onApprove, onReject, onUpda
 
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">{user.companyName}</h1>
+          <h1 className="text-lg font-bold text-slate-900">{user.companyName}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{user.name} · {user.email}</p>
           <p className="text-xs text-slate-400 mt-1">สมัครเมื่อ {formatThaiDate(user.registeredAt)}</p>
         </div>
@@ -5200,7 +5200,7 @@ function UserDetail({ user, tierPermissions, onBack, onApprove, onReject, onUpda
       )}
 
       <Card>
-        <p className="text-sm font-semibold text-slate-900 mb-3">แพ็กเกจของบริษัทนี้</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">แพ็กเกจของบริษัทนี้</p>
         <select
           value={userType}
           onChange={(e) => setUserType(e.target.value)}
@@ -5265,11 +5265,11 @@ function AdminUserManagementPage({ users, tierPermissions, onApprove, onReject, 
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">จัดการผู้ใช้งาน</h1>
+      <h1 className="text-lg font-bold text-slate-900">จัดการผู้ใช้งาน</h1>
 
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <p className="text-sm font-semibold text-slate-900">คำขอที่รอการอนุมัติ</p>
+          <p className="text-sm font-bold text-slate-900">คำขอที่รอการอนุมัติ</p>
           {pendingUsers.length > 0 && (
             <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{pendingUsers.length}</span>
           )}
@@ -5282,10 +5282,10 @@ function AdminUserManagementPage({ users, tierPermissions, onApprove, onReject, 
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-amber-50 text-amber-700 text-left">
-                    <th className="px-4 py-2.5 font-medium">บริษัท</th>
-                    <th className="px-4 py-2.5 font-medium">ผู้ติดต่อ</th>
-                    <th className="px-4 py-2.5 font-medium">อีเมล</th>
-                    <th className="px-4 py-2.5 font-medium">วันที่สมัคร</th>
+                    <th className="px-4 py-2.5 font-bold">บริษัท</th>
+                    <th className="px-4 py-2.5 font-bold">ผู้ติดต่อ</th>
+                    <th className="px-4 py-2.5 font-bold">อีเมล</th>
+                    <th className="px-4 py-2.5 font-bold">วันที่สมัคร</th>
                     <th className="px-4 py-2.5"></th>
                   </tr>
                 </thead>
@@ -5316,18 +5316,18 @@ function AdminUserManagementPage({ users, tierPermissions, onApprove, onReject, 
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-slate-900 mb-3">ผู้ใช้งานทั้งหมด</p>
+        <p className="text-sm font-bold text-slate-900 mb-3">ผู้ใช้งานทั้งหมด</p>
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-left">
-                <th className="px-4 py-2.5 font-medium">บริษัท</th>
-                <th className="px-4 py-2.5 font-medium">ผู้ติดต่อ</th>
-                <th className="px-4 py-2.5 font-medium">อีเมล</th>
-                <th className="px-4 py-2.5 font-medium">วันที่สมัคร</th>
-                <th className="px-4 py-2.5 font-medium">แพ็กเกจ</th>
-                <th className="px-4 py-2.5 font-medium">สถานะ</th>
+                <th className="px-4 py-2.5 font-bold">บริษัท</th>
+                <th className="px-4 py-2.5 font-bold">ผู้ติดต่อ</th>
+                <th className="px-4 py-2.5 font-bold">อีเมล</th>
+                <th className="px-4 py-2.5 font-bold">วันที่สมัคร</th>
+                <th className="px-4 py-2.5 font-bold">แพ็กเกจ</th>
+                <th className="px-4 py-2.5 font-bold">สถานะ</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -5383,10 +5383,10 @@ function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissio
         <button onClick={() => setSelectedTier(null)} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
           <ArrowLeft size={16} /> กลับไปรายการประเภทผู้ใช้งาน
         </button>
-        <h1 className="text-lg font-semibold text-slate-900">แก้ไขสิทธิ์: {userTypeLabel[selectedTier]}</h1>
+        <h1 className="text-lg font-bold text-slate-900">แก้ไขสิทธิ์: {userTypeLabel[selectedTier]}</h1>
 
         <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-1">สิทธิ์การเข้าถึงแต่ละหน้า</p>
+          <p className="text-sm font-bold text-slate-900 mb-1">สิทธิ์การเข้าถึงแต่ละหน้า</p>
           <p className="text-xs text-slate-400 mb-3">
             บริษัทที่ใช้แพ็กเกจนี้จะเห็นเมนูตามที่เลือกไว้นี้เหมือนกันทั้งหมด
           </p>
@@ -5406,7 +5406,7 @@ function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissio
         </Card>
 
         <Card>
-          <p className="text-sm font-semibold text-slate-900 mb-1">ข้อจำกัดการบันทึกข้อมูล</p>
+          <p className="text-sm font-bold text-slate-900 mb-1">ข้อจำกัดการบันทึกข้อมูล</p>
           <p className="text-xs text-slate-400 mb-3">เว้นว่างไว้ = ไม่จำกัดจำนวน</p>
           <label className="text-xs text-slate-500 block mb-1">จำนวนพนักงานสูงสุดที่บันทึกได้</label>
           <input
@@ -5430,15 +5430,15 @@ function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissio
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-slate-900">จัดการประเภทผู้ใช้งาน</h1>
+      <h1 className="text-lg font-bold text-slate-900">จัดการประเภทผู้ใช้งาน</h1>
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-left">
-                <th className="px-4 py-2.5 font-medium">แพ็กเกจ</th>
-                <th className="px-4 py-2.5 font-medium">จำนวนหน้าที่เข้าถึงได้</th>
-                <th className="px-4 py-2.5 font-medium">พนักงานสูงสุด</th>
+                <th className="px-4 py-2.5 font-bold">แพ็กเกจ</th>
+                <th className="px-4 py-2.5 font-bold">จำนวนหน้าที่เข้าถึงได้</th>
+                <th className="px-4 py-2.5 font-bold">พนักงานสูงสุด</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
