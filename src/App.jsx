@@ -3,7 +3,7 @@ import { supabase } from "./lib/supabaseClient";
 import {
   LayoutDashboard, AlertTriangle, HardHat, Wrench, ClipboardCheck,
   Plus, X, Camera, ArrowLeft, ChevronRight, Menu, Users, MapPin, ShieldAlert,
-  Wind, GraduationCap, LogOut,
+  Wind, GraduationCap, LogOut, FlaskConical,
 } from "lucide-react";
 
 // ---------------------------------------------------------------
@@ -142,6 +142,7 @@ const PAGE_OPTIONS = [
   { key: "locations", label: "สถานที่ทำงาน" },
   { key: "ppe", label: "PPE" },
   { key: "equipment", label: "อุปกรณ์ความปลอดภัย" },
+  { key: "chemicals", label: "ทะเบียนสารเคมี" },
 ];
 const ALL_PAGE_KEYS = PAGE_OPTIONS.map((p) => p.key);
 
@@ -234,6 +235,24 @@ function mapLocationRow(loc, hazardRows, latestAssessment, assessorName, ppeRows
 // หลักสูตร (training_courses) — validity_period_days → validityDays
 function mapCourseRow(row) {
   return { id: row.id, name: row.name, validityDays: row.validity_period_days };
+}
+
+// ---------------------------------------------------------------
+// ทะเบียนสารเคมี (chemicals) <-> Supabase mapping
+// ---------------------------------------------------------------
+function mapChemicalRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    casNumber: row.cas_number || "-",
+    quantity: row.quantity ?? "-",
+    unit: row.unit || "-",
+    storageLocation: row.storage_location || "-",
+    hazardType: row.hazard_type || "-",
+    ppeRequired: row.ppe_required || [],
+    sdsStatus: row.sds_status || "pending",
+    recordedDate: row.recorded_date ? row.recorded_date.slice(0, 10) : "",
+  };
 }
 
 // ---------------------------------------------------------------
@@ -413,7 +432,7 @@ async function fetchUserProfile(authUserId) {
 // ที่หน้า "จัดการประเภทผู้ใช้งาน" เท่านั้น ผู้ใช้ที่มีประเภทเดียวกันจะเห็นเมนูเหมือนกันทั้งหมด
 const initialTierPermissions = {
   free: ["dashboard", "incidents", "employees", "checklist"],
-  silver: ["dashboard", "incidents", "ppe", "equipment", "employees", "locations", "checklist"],
+  silver: ["dashboard", "incidents", "ppe", "equipment", "employees", "locations", "checklist", "chemicals"],
   gold: [...ALL_PAGE_KEYS],
 };
 
@@ -456,7 +475,7 @@ const ppeTypeLabel = {
   ear_muffs: "ที่ครอบหู",
   dust_mask: "หน้ากากกรองฝุ่น",
   chemical_mask: "หน้ากากกรองสารเคมี",
-  scba: "ชุดส่งอากาศ (SCBA)",
+  scba: "หน้ากาก SCBA (เฉพาะที่ให้ใช้ส่วนตัว)",
   chemical_gloves: "ถุงมือกันสารเคมี",
   electrical_gloves: "ถุงมือกันไฟฟ้า",
   cut_resistant_gloves: "ถุงมือกันบาด",
@@ -2546,6 +2565,222 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
 // ---------------------------------------------------------------
 // Unsafe acts (การกระทำที่ไม่ปลอดภัย) — เดิมเป็นแท็บในหน้า PPE ย้ายมาเป็นเมนูหลักแยก
 // ---------------------------------------------------------------
+
+// ---------------------------------------------------------------
+// ทะเบียนสารเคมี — ฟอร์มบันทึกด่วนตามแบบฟอร์มกระดาษ "แบบฟอร์มบันทึกสารเคมี (ฉบับย่อ)"
+// ไม่ได้เก็บไฟล์ SDS ฉบับเต็มไว้ในระบบ แค่สถานะเตือนความจำว่าแนบไว้ที่อื่นแล้วหรือยัง
+// ---------------------------------------------------------------
+const sdsStatusLabel = { attached: "แนบแล้ว", pending: "รอเพิ่ม" };
+const sdsStatusTone = (s) => (s === "attached" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700");
+
+function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const emptyForm = {
+    name: "", casNumber: "", quantity: "", unit: "", storageLocation: "",
+    hazardType: "", ppeRequired: [], sdsStatus: "pending", recordedDate: todayIso(),
+  };
+  const [form, setForm] = useState(emptyForm);
+
+  const togglePpe = (p) => {
+    setForm({
+      ...form,
+      ppeRequired: form.ppeRequired.includes(p) ? form.ppeRequired.filter((x) => x !== p) : [...form.ppeRequired, p],
+    });
+  };
+
+  const submit = () => {
+    if (!form.name.trim()) return;
+    onAdd(form);
+    setForm(emptyForm);
+    setShowForm(false);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold text-slate-900">ทะเบียนสารเคมี</h1>
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg"
+        >
+          <Plus size={16} /> บันทึกสารเคมีใหม่
+        </button>
+      </div>
+
+      {showForm && (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-bold text-slate-900">บันทึกสารเคมีใหม่</p>
+            <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-700">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อสารเคมี</label>
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="เช่น โซเดียมไฮดรอกไซด์"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">CAS No. (ถ้าทราบ)</label>
+              <input
+                value={form.casNumber}
+                onChange={(e) => setForm({ ...form, casNumber: e.target.value })}
+                placeholder="เช่น 1310-73-2"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ปริมาณ</label>
+              <input
+                type="number"
+                min="0"
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                placeholder="เช่น 20"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">หน่วย</label>
+              <input
+                value={form.unit}
+                onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                placeholder="เช่น ลิตร, กก., แกลลอน"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="mb-3">
+            <label className="text-xs font-bold text-slate-500 block mb-1">สถานที่จัดเก็บ</label>
+            <input
+              value={form.storageLocation}
+              onChange={(e) => setForm({ ...form, storageLocation: e.target.value })}
+              placeholder="เช่น คลังสารเคมี อาคาร B"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="mb-3">
+            <label className="text-xs font-bold text-slate-500 block mb-1">ประเภทความอันตรายหลัก (เช่น กัดกร่อน/ไวไฟ/พิษ)</label>
+            <input
+              value={form.hazardType}
+              onChange={(e) => setForm({ ...form, hazardType: e.target.value })}
+              placeholder="เช่น กัดกร่อน"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="mb-3">
+            <label className="text-xs font-bold text-slate-500 block mb-1">PPE ที่ต้องใช้</label>
+            <div className="flex flex-wrap gap-2">
+              {ppeTypeOptions.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => togglePpe(p)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border ${
+                    form.ppeRequired.includes(p) ? "bg-blue-700 text-white border-blue-700" : "border-slate-300 text-slate-500"
+                  }`}
+                >
+                  {ppeTypeLabel[p]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ไฟล์ SDS แนบแล้วหรือยัง</label>
+              <div className="flex gap-2">
+                {["pending", "attached"].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setForm({ ...form, sdsStatus: s })}
+                    className={`text-xs px-3 py-1.5 rounded-lg border ${
+                      form.sdsStatus === s ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"
+                    }`}
+                  >
+                    {sdsStatusLabel[s]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">วันที่บันทึก</label>
+              <input
+                type="date"
+                value={form.recordedDate}
+                onChange={(e) => setForm({ ...form, recordedDate: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 mb-3">
+            ผู้บันทึก: {currentUserName} (ใช้บัญชีที่ล็อกอินอยู่โดยอัตโนมัติ) — ฟอร์มนี้สำหรับบันทึกข้อมูลเบื้องต้นอย่างรวดเร็ว
+            กรุณาแนบไฟล์ SDS ฉบับเต็มไว้อ้างอิงนอกระบบ ไม่ต้อง copy รายละเอียดจาก SDS ลงในฟอร์มนี้
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
+              ยกเลิก
+            </button>
+            <button onClick={submit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
+              บันทึก
+            </button>
+          </div>
+        </Card>
+      )}
+
+      <Card className="p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-left">
+                <th className="px-4 py-2.5 font-bold">ชื่อสารเคมี</th>
+                <th className="px-4 py-2.5 font-bold">CAS No.</th>
+                <th className="px-4 py-2.5 font-bold">ปริมาณ</th>
+                <th className="px-4 py-2.5 font-bold">สถานที่จัดเก็บ</th>
+                <th className="px-4 py-2.5 font-bold">ความอันตรายหลัก</th>
+                <th className="px-4 py-2.5 font-bold">PPE ที่ต้องใช้</th>
+                <th className="px-4 py-2.5 font-bold">SDS</th>
+                <th className="px-4 py-2.5 font-bold">บันทึกเมื่อ</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {chemicals.map((c) => (
+                <tr key={c.id} className="border-t border-slate-100">
+                  <td className="px-4 py-2.5 font-bold text-slate-900">{c.name}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{c.casNumber}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{c.quantity} {c.unit !== "-" ? c.unit : ""}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{c.storageLocation}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{c.hazardType}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex flex-wrap gap-1">
+                      {c.ppeRequired.map((p) => (
+                        <span key={p} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{ppeTypeLabel[p]}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5"><Badge tone={sdsStatusTone(c.sdsStatus)}>{sdsStatusLabel[c.sdsStatus]}</Badge></td>
+                  <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(c.recordedDate)}</td>
+                  <td className="px-4 py-2.5 text-right"><ConfirmDeleteButton onConfirm={() => onDelete(c.id)} /></td>
+                </tr>
+              ))}
+              {chemicals.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-3 text-sm text-slate-400">ยังไม่มีข้อมูลสารเคมีที่บันทึกไว้</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
 
 function UnsafeActsPage({ employees, locations, records, onAdd, onDelete }) {
   return (
@@ -5541,6 +5776,7 @@ const NAV = [
       { key: "equipment", label: "อุปกรณ์ความปลอดภัย", icon: Wrench },
     ],
   },
+  { key: "chemicals", label: "ทะเบียนสารเคมี", icon: FlaskConical },
 ];
 
 function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpen, currentUser, tierPermissions, onLogout }) {
@@ -5661,6 +5897,8 @@ export default function JorPorPrototype() {
   const [environmentalLoading, setEnvironmentalLoading] = useState(false);
   const [noncompliance, setNoncomplianceData] = useState([]);
   const [noncomplianceLoading, setNoncomplianceLoading] = useState(false);
+  const [chemicals, setChemicalsData] = useState([]);
+  const [chemicalsLoading, setChemicalsLoading] = useState(false);
 
   // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
   // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
@@ -6150,6 +6388,7 @@ export default function JorPorPrototype() {
       fetchEquipment();
       fetchEnvironmentalMeasurements();
       fetchNoncompliance();
+      fetchChemicals();
     }
   }, [currentUser?.id]);
 
@@ -6399,6 +6638,56 @@ export default function JorPorPrototype() {
       return;
     }
     setNoncomplianceData(noncompliance.filter((r) => r.id !== id));
+  };
+
+  async function fetchChemicals() {
+    setChemicalsLoading(true);
+    const { data, error } = await supabase
+      .from("chemicals")
+      .select("id, name, cas_number, quantity, unit, storage_location, hazard_type, ppe_required, sds_status, recorded_date")
+      .order("recorded_date", { ascending: false });
+    if (error) {
+      console.error("fetchChemicals error:", error);
+      alert("โหลดทะเบียนสารเคมีไม่สำเร็จ: " + error.message + " (ตรวจสอบว่ารัน SQL สร้างตาราง chemicals แล้วหรือยัง)");
+      setChemicalsLoading(false);
+      return;
+    }
+    setChemicalsData((data || []).map(mapChemicalRow));
+    setChemicalsLoading(false);
+  }
+
+  const addChemical = async (form) => {
+    const { data, error } = await supabase
+      .from("chemicals")
+      .insert({
+        organization_id: currentUser.organizationId,
+        name: form.name,
+        cas_number: form.casNumber || null,
+        quantity: form.quantity === "" ? null : Number(form.quantity),
+        unit: form.unit || null,
+        storage_location: form.storageLocation || null,
+        hazard_type: form.hazardType || null,
+        ppe_required: form.ppeRequired,
+        sds_status: form.sdsStatus,
+        recorded_by: currentUser.id,
+        recorded_date: form.recordedDate,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกสารเคมีไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setChemicalsData([mapChemicalRow(data), ...chemicals]);
+  };
+
+  const deleteChemical = async (id) => {
+    const { error } = await supabase.from("chemicals").delete().eq("id", id);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setChemicalsData(chemicals.filter((c) => c.id !== id));
   };
 
   const addEmployee = async (emp) => {
@@ -6977,6 +7266,9 @@ export default function JorPorPrototype() {
         )}
         {page === "unsafeActs" && (
           <UnsafeActsPage employees={employees} locations={locations} records={noncompliance} onAdd={addNoncompliance} onDelete={deleteNoncompliance} />
+        )}
+        {page === "chemicals" && (
+          <ChemicalsPage chemicals={chemicals} currentUserName={currentUser.name} onAdd={addChemical} onDelete={deleteChemical} />
         )}
         {page === "equipment" && (
           <EquipmentPage
