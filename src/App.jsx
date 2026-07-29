@@ -186,6 +186,9 @@ function mapEmployeeRow(row) {
     position: row.position || "-",
     department: row.department || "-",
     primaryLocationId: row.primary_location_id,
+    isJorporManagement: !!row.is_jorpor_management,
+    isJorporSupervisor: !!row.is_jorpor_supervisor,
+    isSafetyCommittee: !!row.is_safety_committee,
   };
 }
 
@@ -198,6 +201,9 @@ function toEmployeeRow(emp, organizationId) {
     position: emp.position === "-" ? null : emp.position,
     department: emp.department === "-" ? null : emp.department,
     primary_location_id: emp.primaryLocationId || null,
+    is_jorpor_management: !!emp.isJorporManagement,
+    is_jorpor_supervisor: !!emp.isJorporSupervisor,
+    is_safety_committee: !!emp.isSafetyCommittee,
   };
 }
 
@@ -633,7 +639,16 @@ const initialTrainingRecords = [
 ];
 
 // หา courseId ทั้งหมดที่พนักงานคนนี้ต้องอบรม ตามตำแหน่ง + ความเสี่ยงของสถานที่ประจำ
-function getRequiredCourseIds(employee, locations, requirements) {
+// หมวดหมู่หลักสูตร (training_courses.category) ที่ผูกกับบทบาทด้านความปลอดภัยของพนักงาน
+// โดยตรง — ถ้าพนักงานถูกระบุว่าเป็นบทบาทใดบทบาทหนึ่งนี้ หลักสูตรที่มี category ตรงกัน
+// จะกลายเป็นหลักสูตรบังคับของพนักงานคนนั้นโดยอัตโนมัติ ไม่ต้องตั้ง training_requirements เอง
+const safetyRoleCourseCategory = {
+  isJorporManagement: "จป.บริหาร",
+  isJorporSupervisor: "จป.หัวหน้างาน",
+  isSafetyCommittee: "คปอ.",
+};
+
+function getRequiredCourseIds(employee, locations, requirements, courses) {
   const loc = locations.find((l) => l.id === employee.primaryLocationId);
   const locationHazards = loc ? loc.hazards : [];
   // normalize ("NFC") ช่วยกันกรณีข้อความตำแหน่งงานที่พิมพ์/วางมาจากที่ต่างกัน (เช่น LINE, Word)
@@ -651,6 +666,13 @@ function getRequiredCourseIds(employee, locations, requirements) {
       if (locationHazards.includes(r.hazardType)) ids.add(r.courseId);
     }
   });
+  if (courses) {
+    Object.entries(safetyRoleCourseCategory).forEach(([flag, category]) => {
+      if (employee[flag]) {
+        courses.filter((c) => c.category === category).forEach((c) => ids.add(c.id));
+      }
+    });
+  }
   return [...ids];
 }
 
@@ -888,7 +910,7 @@ function Dashboard({
   // นับหลักสูตรที่พนักงานแต่ละคน "ยังไม่ผ่าน" หรือ "หมดอายุ" เทียบกับ Training Matrix
   const trainingGaps = [];
   employees.forEach((emp) => {
-    getRequiredCourseIds(emp, locations, trainingRequirements).forEach((cid) => {
+    getRequiredCourseIds(emp, locations, trainingRequirements, trainingCourses).forEach((cid) => {
       const status = getTrainingComplianceStatus(emp.id, cid, trainingRecords);
       if (status === "missing" || status === "expired") {
         trainingGaps.push({ employee: emp, courseId: cid, status });
@@ -3575,9 +3597,9 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
 function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, trainingRecords, trainingCourses, employeeLimit, onAdd, onAddMany, onDelete, onUpdate }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
-  const [form, setForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
+  const [form, setForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "", isJorporManagement: false, isJorporSupervisor: false, isSafetyCommittee: false });
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
+  const [editForm, setEditForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "", isJorporManagement: false, isJorporSupervisor: false, isSafetyCommittee: false });
   const [importMessage, setImportMessage] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -3597,8 +3619,11 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
       position: form.position || "-",
       department: form.department || "-",
       primaryLocationId: form.primaryLocationId || null,
+      isJorporManagement: form.isJorporManagement,
+      isJorporSupervisor: form.isJorporSupervisor,
+      isSafetyCommittee: form.isSafetyCommittee,
     });
-    setForm({ code: "", name: "", position: "", department: "", primaryLocationId: "" });
+    setForm({ code: "", name: "", position: "", department: "", primaryLocationId: "", isJorporManagement: false, isJorporSupervisor: false, isSafetyCommittee: false });
     setShowForm(false);
   };
 
@@ -3610,6 +3635,9 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
       position: emp.position || "",
       department: emp.department || "",
       primaryLocationId: emp.primaryLocationId != null ? String(emp.primaryLocationId) : "",
+      isJorporManagement: !!emp.isJorporManagement,
+      isJorporSupervisor: !!emp.isJorporSupervisor,
+      isSafetyCommittee: !!emp.isSafetyCommittee,
     });
   };
 
@@ -3621,6 +3649,9 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
       position: editForm.position || "-",
       department: editForm.department || "-",
       primaryLocationId: editForm.primaryLocationId || null,
+      isJorporManagement: editForm.isJorporManagement,
+      isJorporSupervisor: editForm.isJorporSupervisor,
+      isSafetyCommittee: editForm.isSafetyCommittee,
     });
     setEditingId(null);
   };
@@ -3821,6 +3852,27 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
               </select>
             </div>
           </div>
+          <div className="mb-4">
+            <label className="text-xs font-bold text-slate-500 block mb-1.5">บทบาทด้านความปลอดภัย (ถ้ามี)</label>
+            <p className="text-xs text-slate-400 mb-2">ถ้าเลือกไว้ ระบบจะขึ้นหลักสูตรฝึกอบรมบังคับที่เกี่ยวข้องให้อัตโนมัติใน Training Matrix</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: "isJorporManagement", label: "จป.บริหาร" },
+                { key: "isJorporSupervisor", label: "จป.หัวหน้างาน" },
+                { key: "isSafetyCommittee", label: "คปอ. (คณะกรรมการความปลอดภัย)" },
+              ].map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setForm({ ...form, [r.key]: !form[r.key] })}
+                  className={`text-xs px-3 py-1.5 rounded-lg border ${
+                    form[r.key] ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-500"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
               ยกเลิก
@@ -3843,6 +3895,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
               <th className="px-4 py-2.5 font-bold">แผนก</th>
               <th className="px-4 py-2.5 font-bold">สถานที่ประจำ</th>
               <th className="px-4 py-2.5 font-bold">PPE ที่ถือครอง</th>
+              <th className="px-4 py-2.5 font-bold">บทบาทด้านความปลอดภัย</th>
               <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
@@ -3891,7 +3944,25 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
                         {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                       </select>
                     </td>
-                    <td className="px-4 py-2 text-slate-400">-</td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          { key: "isJorporManagement", label: "จป.บริหาร" },
+                          { key: "isJorporSupervisor", label: "จป.หัวหน้างาน" },
+                          { key: "isSafetyCommittee", label: "คปอ." },
+                        ].map((r) => (
+                          <button
+                            key={r.key}
+                            onClick={() => setEditForm({ ...editForm, [r.key]: !editForm[r.key] })}
+                            className={`text-xs px-2 py-1 rounded border ${
+                              editForm[r.key] ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-500"
+                            }`}
+                          >
+                            {r.label}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
                     <td className="px-4 py-2" colSpan={2}>
                       <div className="flex gap-2 justify-end">
                         <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 underline">ยกเลิก</button>
@@ -3913,6 +3984,16 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
                   <td className="px-4 py-2.5 text-slate-500">{emp.department}</td>
                   <td className="px-4 py-2.5 text-slate-500">{locationName(emp.primaryLocationId)}</td>
                   <td className="px-4 py-2.5 text-slate-500">{ppe.filter((p) => p.employeeId === emp.id).length} รายการ</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex flex-wrap gap-1">
+                      {emp.isJorporManagement && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">จป.บริหาร</span>}
+                      {emp.isJorporSupervisor && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">จป.หัวหน้างาน</span>}
+                      {emp.isSafetyCommittee && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">คปอ.</span>}
+                      {!emp.isJorporManagement && !emp.isJorporSupervisor && !emp.isSafetyCommittee && (
+                        <span className="text-slate-300">-</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => startEdit(emp)} className="text-xs text-slate-500 underline hover:text-slate-800">
                       แก้ไข
@@ -4962,6 +5043,7 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
   const [form, setForm] = useState({ position: "", hazardType: "", courseId: courses[0]?.id ?? "" });
   const [editingCell, setEditingCell] = useState(null); // { employeeId, courseId } | null
   const [recordForm, setRecordForm] = useState({ completionDate: todayIso(), expiryDate: "" });
+  const [selectedCourseId, setSelectedCourseId] = useState(null);
   const positions = [...new Set(employees.map((e) => e.position))];
 
   const submit = () => {
@@ -4978,6 +5060,30 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
   };
 
   const courseName = (id) => courses.find((c) => c.id === id)?.name ?? "-";
+
+  // พนักงานทุกคนที่ต้องอบรมหลักสูตรนี้ (ทั้งจาก training_requirements ปกติ และจากบทบาท
+  // จป./คปอ. ที่ผูกอัตโนมัติ) — ใช้สร้างทั้งตารางสรุปและหน้ารายละเอียดรายหลักสูตร
+  const employeesRequiringCourse = (courseId) =>
+    employees.filter((emp) => getRequiredCourseIds(emp, locations, requirements, courses).includes(courseId));
+
+  const lastCompletionDate = (employeeId, courseId) => {
+    const recs = records.filter((r) => r.employeeId === employeeId && r.courseId === courseId && r.completionDate);
+    if (recs.length === 0) return null;
+    return recs.reduce((latest, r) => (r.completionDate > latest ? r.completionDate : latest), recs[0].completionDate);
+  };
+
+  // สรุปทุกหลักสูตรที่มีพนักงานอย่างน้อย 1 คนต้องอบรม เรียงหลักสูตรที่มีคนยังไม่ผ่านมากสุดไว้บนสุด
+  const courseSummaries = courses
+    .map((c) => {
+      const requiredEmployees = employeesRequiringCourse(c.id);
+      const notPassedEmployees = requiredEmployees.filter((emp) => {
+        const status = getTrainingComplianceStatus(emp.id, c.id, records);
+        return status === "missing" || status === "expired";
+      });
+      return { course: c, requiredEmployees, notPassedCount: notPassedEmployees.length };
+    })
+    .filter((s) => s.requiredEmployees.length > 0)
+    .sort((a, b) => b.notPassedCount - a.notPassedCount);
 
   const startEditRecord = (employeeId, courseId) => {
     const existing = records.find((r) => r.employeeId === employeeId && r.courseId === courseId);
@@ -5101,99 +5207,165 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
         </Card>
       </div>
 
-      <div>
-        <p className="text-sm font-bold text-slate-900 mb-3">สถานะการอบรมของพนักงาน</p>
-        <Card className="p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 text-left">
-                  <th className="px-4 py-2.5 font-bold">พนักงาน</th>
-                  <th className="px-4 py-2.5 font-bold">ตำแหน่ง</th>
-                  <th className="px-4 py-2.5 font-bold">สถานที่ประจำ</th>
-                  <th className="px-4 py-2.5 font-bold">หลักสูตรที่ต้องอบรม</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((emp) => {
-                  const requiredIds = getRequiredCourseIds(emp, locations, requirements);
-                  const locationName = locations.find((l) => l.id === emp.primaryLocationId)?.name ?? "-";
-                  return (
-                    <tr key={emp.id} className="border-t border-slate-100 align-top">
-                      <td className="px-4 py-2.5">{emp.name}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{emp.position}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{locationName}</td>
+      {selectedCourseId == null ? (
+        <div>
+          <p className="text-sm font-bold text-slate-900 mb-3">สถานะการอบรมตามหลักสูตร</p>
+          <Card className="p-0 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500 text-left">
+                    <th className="px-4 py-2.5 font-bold">หลักสูตรที่ต้องฝึกอบรม</th>
+                    <th className="px-4 py-2.5 font-bold">จำนวนพนักงานที่ต้องอบรม</th>
+                    <th className="px-4 py-2.5 font-bold">จำนวนพนักงานที่ยังไม่ผ่าน</th>
+                    <th className="px-4 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {courseSummaries.map(({ course, requiredEmployees, notPassedCount }) => (
+                    <tr
+                      key={course.id}
+                      onClick={() => setSelectedCourseId(course.id)}
+                      className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-2.5 font-bold text-slate-900">{course.name}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{requiredEmployees.length} คน</td>
                       <td className="px-4 py-2.5">
-                        {requiredIds.length === 0 ? (
-                          <span className="text-slate-400">ไม่มีหลักสูตรบังคับ</span>
+                        {notPassedCount > 0 ? (
+                          <Badge tone="bg-red-50 text-red-700">{notPassedCount} คน</Badge>
                         ) : (
-                          <div className="flex flex-col gap-2">
-                            {requiredIds.map((cid) => {
-                              const status = getTrainingComplianceStatus(emp.id, cid, records);
-                              const isEditingThis = editingCell?.employeeId === emp.id && editingCell?.courseId === cid;
-                              const hasRecord = records.some((r) => r.employeeId === emp.id && r.courseId === cid);
-                              if (isEditingThis) {
-                                return (
-                                  <div key={cid} className="bg-slate-50 rounded-lg p-2.5 space-y-2 max-w-xs">
-                                    <p className="text-xs font-medium text-slate-700">{courseName(cid)}</p>
-                                    <div>
-                                      <label className="text-xs font-bold text-slate-500 block mb-0.5">วันที่อบรมผ่าน</label>
-                                      <input
-                                        type="date"
-                                        value={recordForm.completionDate}
-                                        onChange={(e) => setRecordForm({ ...recordForm, completionDate: e.target.value })}
-                                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-xs font-bold text-slate-500 block mb-0.5">วันหมดอายุ (ถ้ามี)</label>
-                                      <input
-                                        type="date"
-                                        value={recordForm.expiryDate}
-                                        onChange={(e) => setRecordForm({ ...recordForm, expiryDate: e.target.value })}
-                                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs"
-                                      />
-                                    </div>
-                                    <div className="flex justify-end gap-2 pt-1">
-                                      <button onClick={() => setEditingCell(null)} className="text-xs text-slate-500 underline">ยกเลิก</button>
-                                      {hasRecord && (
-                                        <button
-                                          onClick={() => {
-                                            onDeleteRecord(emp.id, cid);
-                                            setEditingCell(null);
-                                          }}
-                                          className="text-xs text-red-600 underline"
-                                        >
-                                          ลบผลอบรม
-                                        </button>
-                                      )}
-                                      <button onClick={saveRecord} className="text-xs bg-slate-900 text-white px-2 py-1 rounded-lg">บันทึก</button>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <button
-                                  key={cid}
-                                  onClick={() => startEditRecord(emp.id, cid)}
-                                  className="flex items-center gap-2 text-left hover:bg-slate-50 rounded px-1 -mx-1 py-0.5"
-                                >
-                                  <span>{courseName(cid)}</span>
-                                  <Badge tone={trainingStatusTone(status)}>{trainingStatusLabel[status]}</Badge>
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <Badge tone="bg-emerald-50 text-emerald-700">ผ่านครบทุกคน</Badge>
                         )}
                       </td>
+                      <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
+                  ))}
+                  {courseSummaries.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-3 text-sm text-slate-400">ยังไม่มีพนักงานคนใดต้องอบรมหลักสูตรใดเลย</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      ) : (
+        (() => {
+          const summary = courseSummaries.find((s) => s.course.id === selectedCourseId) || {
+            course: courses.find((c) => c.id === selectedCourseId),
+            requiredEmployees: employeesRequiringCourse(selectedCourseId),
+          };
+          const notPassed = summary.requiredEmployees.filter((emp) => {
+            const status = getTrainingComplianceStatus(emp.id, selectedCourseId, records);
+            return status === "missing" || status === "expired";
+          });
+          const passed = summary.requiredEmployees.filter((emp) => !notPassed.includes(emp));
+
+          const renderEmployeeRow = (emp) => {
+            const status = getTrainingComplianceStatus(emp.id, selectedCourseId, records);
+            const isEditingThis = editingCell?.employeeId === emp.id && editingCell?.courseId === selectedCourseId;
+            const hasRecord = records.some((r) => r.employeeId === emp.id && r.courseId === selectedCourseId);
+            const lastDate = lastCompletionDate(emp.id, selectedCourseId);
+            if (isEditingThis) {
+              return (
+                <div key={emp.id} className="bg-slate-50 rounded-lg p-3 space-y-2">
+                  <p className="text-sm font-bold text-slate-800">{emp.name}</p>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 block mb-0.5">วันที่อบรมผ่าน</label>
+                      <input
+                        type="date"
+                        value={recordForm.completionDate}
+                        onChange={(e) => setRecordForm({ ...recordForm, completionDate: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 block mb-0.5">วันหมดอายุ (ถ้ามี)</label>
+                      <input
+                        type="date"
+                        value={recordForm.expiryDate}
+                        onChange={(e) => setRecordForm({ ...recordForm, expiryDate: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button onClick={() => setEditingCell(null)} className="text-xs text-slate-500 underline">ยกเลิก</button>
+                    {hasRecord && (
+                      <button
+                        onClick={() => {
+                          onDeleteRecord(emp.id, selectedCourseId);
+                          setEditingCell(null);
+                        }}
+                        className="text-xs text-red-600 underline"
+                      >
+                        ลบผลอบรม
+                      </button>
+                    )}
+                    <button onClick={saveRecord} className="text-xs bg-slate-900 text-white px-2 py-1 rounded-lg">บันทึก</button>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={emp.id} className="flex items-center justify-between gap-2 px-1 py-2 border-t border-slate-100 first:border-t-0">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">{emp.name}</p>
+                  <p className="text-xs text-slate-500">
+                    {emp.position} · {emp.department}
+                    {lastDate && <> · อบรมล่าสุด {formatThaiDate(lastDate)}</>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge tone={trainingStatusTone(status)}>{trainingStatusLabel[status]}</Badge>
+                  <button
+                    onClick={() => startEditRecord(emp.id, selectedCourseId)}
+                    className="text-xs bg-slate-900 text-white px-2.5 py-1.5 rounded-lg"
+                  >
+                    อัปเดต
+                  </button>
+                </div>
+              </div>
+            );
+          };
+
+          return (
+            <div className="space-y-4">
+              <button
+                onClick={() => { setSelectedCourseId(null); setEditingCell(null); }}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800"
+              >
+                <ArrowLeft size={16} /> กลับไปสรุปตามหลักสูตร
+              </button>
+              <h2 className="text-base font-bold text-slate-900">{summary.course?.name ?? "-"}</h2>
+
+              <div>
+                <p className="text-sm font-bold text-red-700 mb-2">ยังไม่ผ่าน ({notPassed.length} คน)</p>
+                <Card className="p-3">
+                  {notPassed.length === 0 ? (
+                    <p className="text-sm text-slate-400 px-1">ผ่านครบทุกคนแล้ว</p>
+                  ) : (
+                    <div>{notPassed.map(renderEmployeeRow)}</div>
+                  )}
+                </Card>
+              </div>
+
+              <div>
+                <p className="text-sm font-bold text-emerald-700 mb-2">ผ่านแล้ว ({passed.length} คน)</p>
+                <Card className="p-3">
+                  {passed.length === 0 ? (
+                    <p className="text-sm text-slate-400 px-1">ยังไม่มีใครผ่าน</p>
+                  ) : (
+                    <div>{passed.map(renderEmployeeRow)}</div>
+                  )}
+                </Card>
+              </div>
+            </div>
+          );
+        })()
+      )}
     </div>
   );
 }
@@ -5906,7 +6078,7 @@ export default function JorPorPrototype() {
     setEmployeesLoading(true);
     const { data, error } = await supabase
       .from("employees")
-      .select("id, employee_code, full_name, position, department, primary_location_id")
+      .select("id, employee_code, full_name, position, department, primary_location_id, is_jorpor_management, is_jorpor_supervisor, is_safety_committee")
       .eq("is_active", true)
       .order("full_name");
     setEmployeesLoading(false);
