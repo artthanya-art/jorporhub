@@ -3,7 +3,7 @@ import { supabase } from "./lib/supabaseClient";
 import {
   LayoutDashboard, AlertTriangle, HardHat, Wrench, ClipboardCheck,
   Plus, X, Camera, ArrowLeft, ChevronRight, Menu, Users, MapPin, ShieldAlert,
-  Wind, GraduationCap, LogOut, FlaskConical,
+  Wind, GraduationCap, LogOut, FlaskConical, FileText,
 } from "lucide-react";
 
 // ---------------------------------------------------------------
@@ -143,6 +143,7 @@ const PAGE_OPTIONS = [
   { key: "ppe", label: "PPE" },
   { key: "equipment", label: "อุปกรณ์ความปลอดภัย" },
   { key: "chemicals", label: "ทะเบียนสารเคมี" },
+  { key: "govReports", label: "รายงานราชการ" },
 ];
 const ALL_PAGE_KEYS = PAGE_OPTIONS.map((p) => p.key);
 
@@ -159,6 +160,22 @@ function mapUserRow(row) {
     companyName: row.organization?.name ?? "-",
     organizationId: row.organization?.id ?? null,
     ltiBaselineDate: row.organization?.lti_baseline_date ? row.organization.lti_baseline_date.slice(0, 10) : null,
+    orgProfile: {
+      name: row.organization?.name || "",
+      taxId: row.organization?.tax_id || "",
+      industryType: row.organization?.industry_type || "",
+      accountTier: row.organization?.account_tier || "",
+      address: row.organization?.address || "",
+      employeeCount: row.organization?.employee_count ?? "",
+      contactEmail: row.organization?.contact_email || "",
+      contactPhone: row.organization?.contact_phone || "",
+      jorporProfessionalName: row.organization?.jorpor_professional_name || "",
+      jorporTechnicalName: row.organization?.jorpor_technical_name || "",
+      committeeEmployerNames: row.organization?.committee_employer_names || "",
+      committeeEmployeeNames: row.organization?.committee_employee_names || "",
+      committeeAppointedDate: row.organization?.committee_appointed_date ? row.organization.committee_appointed_date.slice(0, 10) : "",
+      committeeTermEndDate: row.organization?.committee_term_end_date ? row.organization.committee_term_end_date.slice(0, 10) : "",
+    },
     email: row.email,
     userType: row.role === "super_admin" ? null : planName,
     status: row.approval_status,
@@ -171,6 +188,9 @@ const USER_SELECT_QUERY = `
   id, email, full_name, role, approval_status, created_at,
   organization:organizations (
     id, name, lti_baseline_date,
+    tax_id, industry_type, account_tier, address, employee_count, contact_email, contact_phone,
+    jorpor_professional_name, jorpor_technical_name,
+    committee_employer_names, committee_employee_names, committee_appointed_date, committee_term_end_date,
     subscriptions ( status, plan:subscription_plans ( name ) )
   )
 `;
@@ -438,7 +458,7 @@ async function fetchUserProfile(authUserId) {
 // ที่หน้า "จัดการประเภทผู้ใช้งาน" เท่านั้น ผู้ใช้ที่มีประเภทเดียวกันจะเห็นเมนูเหมือนกันทั้งหมด
 const initialTierPermissions = {
   free: ["dashboard", "incidents", "employees", "checklist"],
-  silver: ["dashboard", "incidents", "ppe", "equipment", "employees", "locations", "checklist", "chemicals"],
+  silver: ["dashboard", "incidents", "ppe", "equipment", "employees", "locations", "checklist", "chemicals", "govReports"],
   gold: [...ALL_PAGE_KEYS],
 };
 
@@ -2800,6 +2820,347 @@ function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete }) {
           </table>
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------
+// รายงานราชการ — ข้อมูลองค์กร/คปอ. + ชั่วโมงทำงานรายเดือน + export ตามไตรมาส
+// ---------------------------------------------------------------
+const accountTierDbToUi = { "บัญชี_1": "บัญชี 1", "บัญชี_2": "บัญชี 2", "บัญชี_3": "บัญชี 3" };
+const accountTierOptions = ["บัญชี_1", "บัญชี_2", "บัญชี_3"];
+
+function monthDateOptions(count) {
+  // สร้างรายการ "วันที่ 1 ของเดือน" ย้อนหลังจากเดือนปัจจุบัน ให้เลือกกรอก/แก้ไขย้อนหลังได้
+  // (ไม่ล็อกไว้แค่เดือนปัจจุบันเดือนเดียว เพราะเพิ่งเริ่มใช้ระบบกลางไตรมาสก็ต้องกรอกย้อนหลังได้)
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    out.push({ value: iso, label: `${thaiMonths[d.getMonth()]} ${d.getFullYear() + 543}` });
+  }
+  return out;
+}
+
+function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsertWorkingHours, onDeleteWorkingHours, incidents, employees }) {
+  const [editingOrg, setEditingOrg] = useState(false);
+  const [orgForm, setOrgForm] = useState(orgProfile);
+  const monthOptions = monthDateOptions(18); // ย้อนหลังได้ถึง 18 เดือน
+  const [monthForm, setMonthForm] = useState({ monthDate: monthOptions[0].value, totalHours: "", avgEmployeeCount: "", notes: "" });
+
+  // พอเลือกเดือนไหน ถ้ามีข้อมูลเดือนนั้นอยู่แล้ว ให้ดึงมาเติมในฟอร์มทันที (กลายเป็นแก้ไขแทนเพิ่มใหม่)
+  useEffect(() => {
+    const existing = workingHours.find((w) => w.monthDate === monthForm.monthDate);
+    setMonthForm((f) => ({
+      ...f,
+      totalHours: existing?.totalHours ?? "",
+      avgEmployeeCount: existing?.avgEmployeeCount ?? "",
+      notes: existing?.notes ?? "",
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthForm.monthDate]);
+
+  const startEditOrg = () => {
+    setOrgForm(orgProfile);
+    setEditingOrg(true);
+  };
+  const saveOrg = () => {
+    onUpdateOrgProfile(orgForm);
+    setEditingOrg(false);
+  };
+  const saveMonth = () => {
+    if (monthForm.totalHours === "" && monthForm.avgEmployeeCount === "") return;
+    onUpsertWorkingHours(monthForm.monthDate, monthForm);
+  };
+
+  // --- คำนวณสถานะ/สถิติรายไตรมาส (ไตรมาสปัจจุบัน + ย้อนหลัง 3 ไตรมาส) ---
+  const today = new Date();
+  const currentAbsQ = today.getFullYear() * 4 + Math.floor(today.getMonth() / 3);
+  const quarters = [0, 1, 2, 3].map((i) => {
+    const absQ = currentAbsQ - i;
+    const year = Math.floor(absQ / 4);
+    const quarterNum = (absQ % 4) + 1;
+    const startMonthIndex = (quarterNum - 1) * 3; // 0-based
+    const monthDates = [0, 1, 2].map((m) => `${year}-${String(startMonthIndex + m + 1).padStart(2, "0")}-01`);
+    const monthEntries = monthDates.map((md) => workingHours.find((w) => w.monthDate === md) || null);
+    const isCurrent = i === 0;
+    const readyMonths = monthEntries.filter(Boolean).length;
+    const totalHours = monthEntries.reduce((sum, e) => sum + (e?.totalHours ? Number(e.totalHours) : 0), 0);
+    const avgEmployeeVals = monthEntries.filter((e) => e?.avgEmployeeCount != null).map((e) => Number(e.avgEmployeeCount));
+    const avgEmployeeCount = avgEmployeeVals.length ? Math.round(avgEmployeeVals.reduce((a, b) => a + b, 0) / avgEmployeeVals.length) : null;
+
+    const quarterStart = monthDates[0];
+    const quarterEndDate = new Date(year, startMonthIndex + 3, 0); // วันสุดท้ายของเดือนที่ 3
+    const quarterEnd = `${quarterEndDate.getFullYear()}-${String(quarterEndDate.getMonth() + 1).padStart(2, "0")}-${String(quarterEndDate.getDate()).padStart(2, "0")}`;
+    const incidentsInQuarter = incidents.filter((inc) => inc.incidentDate >= quarterStart && inc.incidentDate <= quarterEnd);
+    const ltiIncidents = incidentsInQuarter.filter((inc) => inc.injuredEmployees.some((e) => e.lostWorkdays > 0));
+    const totalLostDays = incidentsInQuarter.reduce(
+      (sum, inc) => sum + inc.injuredEmployees.reduce((s, e) => s + (e.lostWorkdays || 0), 0),
+      0
+    );
+    const ifr = totalHours > 0 ? ((ltiIncidents.length * 1000000) / totalHours).toFixed(2) : null;
+    const isr = totalHours > 0 ? ((totalLostDays * 1000000) / totalHours).toFixed(2) : null;
+
+    return {
+      key: `${year}-Q${quarterNum}`, year, quarterNum, monthDates, monthEntries, readyMonths,
+      isComplete: readyMonths === 3, isCurrent, totalHours, avgEmployeeCount,
+      incidentCount: incidentsInQuarter.length, ltiCount: ltiIncidents.length, totalLostDays, ifr, isr,
+    };
+  });
+
+  const exportQuarter = async (q) => {
+    const XLSX = await import("xlsx");
+    const row = {
+      "ไตรมาส/ปี": `Q${q.quarterNum}/${q.year + 543} (${thaiMonths[(q.quarterNum - 1) * 3]}-${thaiMonths[(q.quarterNum - 1) * 3 + 2]})`,
+      "จำนวนลูกจ้างเฉลี่ย": q.avgEmployeeCount ?? "",
+      "ชั่วโมงทำงานรวม": q.totalHours || "",
+      "จำนวนอุบัติเหตุถึงขั้นหยุดงาน": q.ltiCount,
+      "จำนวนวันหยุดงานรวม": q.totalLostDays,
+      "IFR (อัตราความถี่)": q.ifr ?? "",
+      "ISR (อัตราความรุนแรง)": q.isr ?? "",
+      "จำนวนอุบัติเหตุที่ต้องแจ้ง กท.16": "", // ระบบยังไม่มีการทำเครื่องหมายนี้ ให้ จป. กรอกเองก่อนยื่นจริง
+      "หมายเหตุ": !q.isComplete ? `กรอกชั่วโมงทำงานไม่ครบ (${q.readyMonths}/3 เดือน) ตัวเลขนี้อาจไม่แม่นยำ` : "",
+    };
+    const worksheet = XLSX.utils.json_to_sheet([row]);
+    worksheet["!cols"] = Object.keys(row).map(() => ({ wch: 22 }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "สถิติอุบัติเหตุรายไตรมาส");
+    XLSX.writeFile(workbook, `สถิติอุบัติเหตุ_Q${q.quarterNum}_${q.year + 543}.xlsx`);
+  };
+
+  const exportOrgInfo = async () => {
+    const XLSX = await import("xlsx");
+    const rows = [
+      ["ชื่อสถานประกอบการ", orgProfile.name || "", "ตามหนังสือรับรองนิติบุคคล"],
+      ["เลขทะเบียนนิติบุคคล", orgProfile.taxId || "", ""],
+      ["ประเภทกิจการ (บัญชี 1/2/3)", accountTierDbToUi[orgProfile.accountTier] || "", "อ้างอิงท้ายกฎกระทรวง 2565"],
+      ["ที่อยู่สถานประกอบการ", orgProfile.address || "", ""],
+      ["จำนวนลูกจ้างทั้งหมด", orgProfile.employeeCount ?? "", "อัปเดตทุกไตรมาส"],
+      ["ชื่อ จป.บริหาร", employeeNamesByRole("isJorporManagement"), ""],
+      ["ชื่อ จป.หัวหน้างาน", employeeNamesByRole("isJorporSupervisor"), ""],
+      ["ชื่อ จป.วิชาชีพ", orgProfile.jorporProfessionalName || "", ""],
+      ["ชื่อ จป.เทคนิค", orgProfile.jorporTechnicalName || "", ""],
+      ["รายชื่อกรรมการ คปอ. ฝ่ายนายจ้าง", orgProfile.committeeEmployerNames || "", "คั่นด้วย ; ถ้ามีหลายคน"],
+      ["รายชื่อกรรมการ คปอ. ฝ่ายลูกจ้าง", orgProfile.committeeEmployeeNames || "", "คั่นด้วย ; ถ้ามีหลายคน"],
+      ["วันที่แต่งตั้ง คปอ. ชุดปัจจุบัน", orgProfile.committeeAppointedDate ? formatThaiDate(orgProfile.committeeAppointedDate) : "", ""],
+      ["วาระ คปอ. สิ้นสุดวันที่", orgProfile.committeeTermEndDate ? formatThaiDate(orgProfile.committeeTermEndDate) : "", ""],
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet([["รายการ", "ข้อมูล", "หมายเหตุ"], ...rows]);
+    worksheet["!cols"] = [{ wch: 32 }, { wch: 40 }, { wch: 30 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "ข้อมูลองค์กร-คปอ");
+    XLSX.writeFile(workbook, "ข้อมูลองค์กร-คปอ.xlsx");
+  };
+
+  // ชื่อ จป.บริหาร/จป.หัวหน้างาน ดึงจากพนักงานที่ติ๊กบทบาทไว้ในหน้าพนักงาน — ถ้ามีมากกว่า 1 คน
+  // ต่อชื่อด้วย ; (ระบบยังไม่รองรับการเลือกแค่ 1 คนเป็น "ตัวแทนหลัก" สำหรับรายงานนี้โดยเฉพาะ)
+  function employeeNamesByRole(flag) {
+    const names = employees.filter((e) => e[flag]).map((e) => e.name);
+    return names.length > 0 ? names.join("; ") : "-";
+  }
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-lg font-bold text-slate-900">รายงานราชการ</h1>
+
+      {/* ส่วนที่ 1: ข้อมูลองค์กร */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-bold text-slate-900">ข้อมูลองค์กร-คปอ.</p>
+          {!editingOrg && (
+            <button onClick={startEditOrg} className="text-xs text-slate-500 underline hover:text-slate-700">แก้ไข</button>
+          )}
+        </div>
+        <Card>
+          {!editingOrg ? (
+            <div className="grid sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <p><span className="text-slate-500">ชื่อสถานประกอบการ:</span> {orgProfile.name || "-"}</p>
+              <p><span className="text-slate-500">เลขทะเบียนนิติบุคคล:</span> {orgProfile.taxId || "-"}</p>
+              <p><span className="text-slate-500">ประเภทกิจการ:</span> {accountTierDbToUi[orgProfile.accountTier] || "-"}</p>
+              <p><span className="text-slate-500">จำนวนลูกจ้างทั้งหมด:</span> {orgProfile.employeeCount || "-"}</p>
+              <p className="sm:col-span-2"><span className="text-slate-500">ที่อยู่:</span> {orgProfile.address || "-"}</p>
+              <p><span className="text-slate-500">ชื่อ จป.บริหาร:</span> {employeeNamesByRole("isJorporManagement")}</p>
+              <p><span className="text-slate-500">ชื่อ จป.หัวหน้างาน:</span> {employeeNamesByRole("isJorporSupervisor")}</p>
+              <p><span className="text-slate-500">ชื่อ จป.วิชาชีพ:</span> {orgProfile.jorporProfessionalName || "-"}</p>
+              <p><span className="text-slate-500">ชื่อ จป.เทคนิค:</span> {orgProfile.jorporTechnicalName || "-"}</p>
+              <p className="sm:col-span-2"><span className="text-slate-500">คปอ. ฝ่ายนายจ้าง:</span> {orgProfile.committeeEmployerNames || "-"}</p>
+              <p className="sm:col-span-2"><span className="text-slate-500">คปอ. ฝ่ายลูกจ้าง:</span> {orgProfile.committeeEmployeeNames || "-"}</p>
+              <p><span className="text-slate-500">วันแต่งตั้ง คปอ.:</span> {orgProfile.committeeAppointedDate ? formatThaiDate(orgProfile.committeeAppointedDate) : "-"}</p>
+              <p><span className="text-slate-500">วาระสิ้นสุด:</span> {orgProfile.committeeTermEndDate ? formatThaiDate(orgProfile.committeeTermEndDate) : "-"}</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อสถานประกอบการ</label>
+                  <input value={orgForm.name} onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">เลขทะเบียนนิติบุคคล</label>
+                  <input value={orgForm.taxId} onChange={(e) => setOrgForm({ ...orgForm, taxId: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">ประเภทกิจการ</label>
+                  <select value={orgForm.accountTier} onChange={(e) => setOrgForm({ ...orgForm, accountTier: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">ยังไม่ระบุ</option>
+                    {accountTierOptions.map((t) => <option key={t} value={t}>{accountTierDbToUi[t]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">จำนวนลูกจ้างทั้งหมด</label>
+                  <input type="number" min="0" value={orgForm.employeeCount} onChange={(e) => setOrgForm({ ...orgForm, employeeCount: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ที่อยู่สถานประกอบการ</label>
+                <textarea rows={2} value={orgForm.address} onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none" />
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อ จป.วิชาชีพ</label>
+                  <input value={orgForm.jorporProfessionalName} onChange={(e) => setOrgForm({ ...orgForm, jorporProfessionalName: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อ จป.เทคนิค</label>
+                  <input value={orgForm.jorporTechnicalName} onChange={(e) => setOrgForm({ ...orgForm, jorporTechnicalName: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <p className="text-xs text-slate-400">ชื่อ จป.บริหาร/จป.หัวหน้างาน ดึงจากพนักงานที่ระบุบทบาทไว้ในหน้า "พนักงาน" โดยอัตโนมัติ ไม่ต้องกรอกซ้ำที่นี่</p>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">รายชื่อกรรมการ คปอ. ฝ่ายนายจ้าง (คั่นด้วย ;)</label>
+                <input value={orgForm.committeeEmployerNames} onChange={(e) => setOrgForm({ ...orgForm, committeeEmployerNames: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">รายชื่อกรรมการ คปอ. ฝ่ายลูกจ้าง (คั่นด้วย ;)</label>
+                <input value={orgForm.committeeEmployeeNames} onChange={(e) => setOrgForm({ ...orgForm, committeeEmployeeNames: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">วันที่แต่งตั้ง คปอ. ชุดปัจจุบัน</label>
+                  <input type="date" value={orgForm.committeeAppointedDate} onChange={(e) => setOrgForm({ ...orgForm, committeeAppointedDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">วาระ คปอ. สิ้นสุดวันที่</label>
+                  <input type="date" value={orgForm.committeeTermEndDate} onChange={(e) => setOrgForm({ ...orgForm, committeeTermEndDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setEditingOrg(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">ยกเลิก</button>
+                <button onClick={saveOrg} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">บันทึก</button>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* ส่วนที่ 2: ชั่วโมงทำงานรายเดือน */}
+      <div>
+        <p className="text-sm font-bold text-slate-900 mb-3">บันทึกชั่วโมงทำงานรายเดือน</p>
+        <Card className="mb-3">
+          <div className="grid sm:grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">เดือน/ปี</label>
+              <select
+                value={monthForm.monthDate}
+                onChange={(e) => setMonthForm({ ...monthForm, monthDate: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              >
+                {monthOptions.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ชั่วโมงทำงานรวม</label>
+              <input
+                type="number" min="0" value={monthForm.totalHours}
+                onChange={(e) => setMonthForm({ ...monthForm, totalHours: e.target.value })}
+                placeholder="เช่น 51200" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">จำนวนพนักงานเฉลี่ยเดือนนี้</label>
+              <input
+                type="number" min="0" value={monthForm.avgEmployeeCount}
+                onChange={(e) => setMonthForm({ ...monthForm, avgEmployeeCount: e.target.value })}
+                placeholder="เช่น 320" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button onClick={saveMonth} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">บันทึกเดือนนี้</button>
+          </div>
+        </Card>
+        <Card className="p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-left">
+                  <th className="px-4 py-2.5 font-bold">เดือน</th>
+                  <th className="px-4 py-2.5 font-bold">ชั่วโมงทำงานรวม</th>
+                  <th className="px-4 py-2.5 font-bold">พนักงานเฉลี่ย</th>
+                  <th className="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {workingHours.map((w) => (
+                  <tr key={w.id} className="border-t border-slate-100">
+                    <td className="px-4 py-2.5">{monthOptions.find((m) => m.value === w.monthDate)?.label || w.monthDate}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{w.totalHours ?? "-"}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{w.avgEmployeeCount ?? "-"}</td>
+                    <td className="px-4 py-2.5 text-right"><ConfirmDeleteButton onConfirm={() => onDeleteWorkingHours(w.id)} /></td>
+                  </tr>
+                ))}
+                {workingHours.length === 0 && (
+                  <tr><td colSpan={4} className="px-4 py-3 text-sm text-slate-400">ยังไม่มีข้อมูลชั่วโมงทำงานที่บันทึกไว้</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+
+      {/* ส่วนที่ 3: Export รายไตรมาส */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-bold text-slate-900">Export รายงานราชการ</p>
+          <button onClick={exportOrgInfo} className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-200">
+            Export ข้อมูลองค์กร-คปอ.
+          </button>
+        </div>
+        <div className="space-y-3">
+          {quarters.map((q) => (
+            <Card key={q.key}>
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">
+                    Q{q.quarterNum}/{q.year + 543}
+                    {q.isCurrent && <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-700 px-2 py-0.5 rounded">ไตรมาสปัจจุบัน</span>}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {thaiMonths[(q.quarterNum - 1) * 3]}-{thaiMonths[(q.quarterNum - 1) * 3 + 2]} {q.year + 543}
+                  </p>
+                  <div className="mt-2 text-xs text-slate-500 space-y-0.5">
+                    <p>ข้อมูลชั่วโมงทำงาน: {q.readyMonths}/3 เดือน {q.isComplete ? "✅ ครบแล้ว" : "— ยังไม่ครบ"}</p>
+                    {q.totalHours > 0 && (
+                      <p>อุบัติเหตุถึงขั้นหยุดงาน {q.ltiCount} ครั้ง · วันหยุดงานรวม {q.totalLostDays} วัน · IFR {q.ifr} · ISR {q.isr}</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => exportQuarter(q)}
+                  className={`text-xs px-3 py-2 rounded-lg shrink-0 ${
+                    q.isComplete ? "bg-slate-900 text-white" : "bg-amber-50 text-amber-700 border border-amber-200"
+                  }`}
+                >
+                  {q.isComplete ? "Export ไตรมาสนี้" : "Export (ข้อมูลไม่ครบ)"}
+                </button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -5975,6 +6336,7 @@ const NAV = [
     ],
   },
   { key: "chemicals", label: "ทะเบียนสารเคมี", icon: FlaskConical },
+  { key: "govReports", label: "รายงานราชการ", icon: FileText },
 ];
 
 function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpen, currentUser, tierPermissions, onLogout }) {
@@ -6097,6 +6459,8 @@ export default function JorPorPrototype() {
   const [noncomplianceLoading, setNoncomplianceLoading] = useState(false);
   const [chemicals, setChemicalsData] = useState([]);
   const [chemicalsLoading, setChemicalsLoading] = useState(false);
+  const [workingHours, setWorkingHoursData] = useState([]);
+  const [workingHoursLoading, setWorkingHoursLoading] = useState(false);
 
   // ดึงรายชื่อพนักงานจริงจาก Supabase (แทนข้อมูลจำลองในความจำแบบเดิม) — RLS ฝั่งฐานข้อมูล
   // กรองให้อัตโนมัติอยู่แล้วว่าเห็นได้เฉพาะพนักงานของบริษัทตัวเอง ไม่ต้องกรองซ้ำฝั่งนี้
@@ -6587,6 +6951,7 @@ export default function JorPorPrototype() {
       fetchEnvironmentalMeasurements();
       fetchNoncompliance();
       fetchChemicals();
+      fetchWorkingHours();
     }
   }, [currentUser?.id]);
 
@@ -6886,6 +7251,96 @@ export default function JorPorPrototype() {
       return;
     }
     setChemicalsData(chemicals.filter((c) => c.id !== id));
+  };
+
+  // อัปเดตข้อมูลองค์กร/คปอ. (ใช้ตาราง organizations ที่มีอยู่แล้ว + คอลัมน์ใหม่ที่เพิ่งเพิ่ม)
+  const updateOrgProfile = async (fields) => {
+    const payload = {};
+    if (fields.name !== undefined) payload.name = fields.name || null;
+    if (fields.taxId !== undefined) payload.tax_id = fields.taxId || null;
+    if (fields.industryType !== undefined) payload.industry_type = fields.industryType || null;
+    if (fields.accountTier !== undefined) payload.account_tier = fields.accountTier || null;
+    if (fields.address !== undefined) payload.address = fields.address || null;
+    if (fields.employeeCount !== undefined) payload.employee_count = fields.employeeCount === "" ? null : Number(fields.employeeCount);
+    if (fields.contactEmail !== undefined) payload.contact_email = fields.contactEmail || null;
+    if (fields.contactPhone !== undefined) payload.contact_phone = fields.contactPhone || null;
+    if (fields.jorporProfessionalName !== undefined) payload.jorpor_professional_name = fields.jorporProfessionalName || null;
+    if (fields.jorporTechnicalName !== undefined) payload.jorpor_technical_name = fields.jorporTechnicalName || null;
+    if (fields.committeeEmployerNames !== undefined) payload.committee_employer_names = fields.committeeEmployerNames || null;
+    if (fields.committeeEmployeeNames !== undefined) payload.committee_employee_names = fields.committeeEmployeeNames || null;
+    if (fields.committeeAppointedDate !== undefined) payload.committee_appointed_date = fields.committeeAppointedDate || null;
+    if (fields.committeeTermEndDate !== undefined) payload.committee_term_end_date = fields.committeeTermEndDate || null;
+    const { error } = await supabase.from("organizations").update(payload).eq("id", currentUser.organizationId);
+    if (error) {
+      alert("บันทึกข้อมูลองค์กรไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setCurrentUser({ ...currentUser, orgProfile: { ...currentUser.orgProfile, ...fields } });
+  };
+
+  async function fetchWorkingHours() {
+    setWorkingHoursLoading(true);
+    const { data, error } = await supabase
+      .from("monthly_working_hours")
+      .select("id, month_date, total_working_hours, average_employee_count, notes")
+      .order("month_date", { ascending: false });
+    if (error) {
+      console.error("fetchWorkingHours error:", error);
+      setWorkingHoursLoading(false);
+      return;
+    }
+    setWorkingHoursData(
+      (data || []).map((r) => ({
+        id: r.id,
+        monthDate: r.month_date,
+        totalHours: r.total_working_hours,
+        avgEmployeeCount: r.average_employee_count,
+        notes: r.notes || "",
+      }))
+    );
+    setWorkingHoursLoading(false);
+  }
+
+  // บันทึก/แก้ไขข้อมูลของเดือนใดเดือนหนึ่ง — ใช้ upsert โดยยึด (organization_id, month_date) เป็นคีย์
+  // เพื่อให้กรอกซ้ำเดือนเดิมแล้วกลายเป็นการแก้ไขแทนที่จะสร้างแถวซ้ำ
+  const upsertWorkingHours = async (monthDate, fields) => {
+    const { data, error } = await supabase
+      .from("monthly_working_hours")
+      .upsert(
+        {
+          organization_id: currentUser.organizationId,
+          month_date: monthDate,
+          total_working_hours: fields.totalHours === "" ? null : Number(fields.totalHours),
+          average_employee_count: fields.avgEmployeeCount === "" ? null : Number(fields.avgEmployeeCount),
+          notes: fields.notes || null,
+        },
+        { onConflict: "organization_id,month_date" }
+      )
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกชั่วโมงทำงานไม่สำเร็จ: " + error.message);
+      return;
+    }
+    const mapped = {
+      id: data.id, monthDate: data.month_date, totalHours: data.total_working_hours,
+      avgEmployeeCount: data.average_employee_count, notes: data.notes || "",
+    };
+    const existingIdx = workingHours.findIndex((w) => w.monthDate === monthDate);
+    if (existingIdx >= 0) {
+      setWorkingHoursData(workingHours.map((w) => (w.monthDate === monthDate ? mapped : w)));
+    } else {
+      setWorkingHoursData([mapped, ...workingHours].sort((a, b) => (a.monthDate < b.monthDate ? 1 : -1)));
+    }
+  };
+
+  const deleteWorkingHours = async (id) => {
+    const { error } = await supabase.from("monthly_working_hours").delete().eq("id", id);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setWorkingHoursData(workingHours.filter((w) => w.id !== id));
   };
 
   const addEmployee = async (emp) => {
@@ -7467,6 +7922,17 @@ export default function JorPorPrototype() {
         )}
         {page === "chemicals" && (
           <ChemicalsPage chemicals={chemicals} currentUserName={currentUser.name} onAdd={addChemical} onDelete={deleteChemical} />
+        )}
+        {page === "govReports" && (
+          <GovReportsPage
+            orgProfile={currentUser.orgProfile}
+            onUpdateOrgProfile={updateOrgProfile}
+            workingHours={workingHours}
+            onUpsertWorkingHours={upsertWorkingHours}
+            onDeleteWorkingHours={deleteWorkingHours}
+            incidents={incidents}
+            employees={employees}
+          />
         )}
         {page === "equipment" && (
           <EquipmentPage
