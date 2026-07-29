@@ -240,7 +240,7 @@ function mapLocationRow(loc, hazardRows, latestAssessment, assessorName, ppeRows
 
 // หลักสูตร (training_courses) — validity_period_days → validityDays
 function mapCourseRow(row) {
-  return { id: row.id, name: row.name, validityDays: row.validity_period_days };
+  return { id: row.id, name: row.name, category: row.category || null, validityDays: row.validity_period_days };
 }
 
 // ---------------------------------------------------------------
@@ -6152,7 +6152,7 @@ export default function JorPorPrototype() {
   async function fetchTrainingCourses() {
     const { data, error } = await supabase
       .from("training_courses")
-      .select("id, name, validity_period_days")
+      .select("id, name, category, validity_period_days")
       .order("name");
     if (error) {
       console.error("fetchTrainingCourses error:", error);
