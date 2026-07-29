@@ -5044,6 +5044,7 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
   const [editingCell, setEditingCell] = useState(null); // { employeeId, courseId } | null
   const [recordForm, setRecordForm] = useState({ completionDate: todayIso(), expiryDate: "" });
   const [selectedCourseId, setSelectedCourseId] = useState(null);
+  const [activeTab, setActiveTab] = useState("status"); // "status" | "requirements"
   const positions = [...new Set(employees.map((e) => e.position))];
 
   const submit = () => {
@@ -5106,6 +5107,26 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
     <div className="space-y-5">
       <h1 className="text-lg font-bold text-slate-900">Training Matrix</h1>
 
+      <div className="flex gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("status")}
+          className={`text-sm px-3 py-2 -mb-px border-b-2 ${
+            activeTab === "status" ? "border-slate-900 font-bold text-slate-900" : "border-transparent text-slate-500"
+          }`}
+        >
+          สถานะการอบรม
+        </button>
+        <button
+          onClick={() => { setActiveTab("requirements"); setSelectedCourseId(null); }}
+          className={`text-sm px-3 py-2 -mb-px border-b-2 ${
+            activeTab === "requirements" ? "border-slate-900 font-bold text-slate-900" : "border-transparent text-slate-500"
+          }`}
+        >
+          ตารางกำหนดหลักสูตร
+        </button>
+      </div>
+
+      {activeTab === "requirements" && (
       <div>
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-bold text-slate-900">ตารางกำหนดหลักสูตรตามตำแหน่ง/ความเสี่ยง</p>
@@ -5206,7 +5227,10 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
           </div>
         </Card>
       </div>
+      )}
 
+      {activeTab === "status" && (
+      <>
       {selectedCourseId == null ? (
         <div>
           <p className="text-sm font-bold text-slate-900 mb-3">สถานะการอบรมตามหลักสูตร</p>
@@ -5365,6 +5389,8 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
             </div>
           );
         })()
+      )}
+      </>
       )}
     </div>
   );
