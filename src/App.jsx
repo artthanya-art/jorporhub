@@ -1276,16 +1276,24 @@ function Dashboard({
       .map((f) => ({ ...f, inspectionNumber: insp.inspectionNumber, area: safetyInspectionAreaLabel(insp, locations) }))
   );
 
-  // นับหลักสูตรที่พนักงานแต่ละคน "ยังไม่ผ่าน" หรือ "หมดอายุ" เทียบกับ Training Matrix
-  const trainingGaps = [];
+  // สรุปตามหลักสูตร: จำนวนคนที่ต้องอบรมทั้งหมด vs จำนวนคนที่ยังไม่ผ่าน/หมดอายุ ต่อหลักสูตร
+  const courseGapStats = {};
   employees.forEach((emp) => {
     getRequiredCourseIds(emp, locations, trainingRequirements, trainingCourses).forEach((cid) => {
+      if (!courseGapStats[cid]) courseGapStats[cid] = { total: 0, notPassed: 0 };
+      courseGapStats[cid].total += 1;
       const status = getTrainingComplianceStatus(emp.id, cid, trainingRecords);
-      if (status === "missing" || status === "expired") {
-        trainingGaps.push({ employee: emp, courseId: cid, status });
-      }
+      if (status === "missing" || status === "expired") courseGapStats[cid].notPassed += 1;
     });
   });
+  const courseGapList = Object.entries(courseGapStats)
+    .map(([courseId, stats]) => ({
+      courseId,
+      courseName: trainingCourses.find((c) => c.id === courseId)?.name ?? "-",
+      ...stats,
+    }))
+    .filter((c) => c.notPassed > 0)
+    .sort((a, b) => b.notPassed - a.notPassed);
 
   // "วันไม่มีอุบัติเหตุ" นับตามหลัก Lost Time Injury (LTI): หาอุบัติเหตุล่าสุดที่ทำให้ต้อง
   // หยุดงานจริง (lostWorkdays > 0) แล้วนับวันจากวันนั้นถึงวันนี้ — เกือบเกิดเหตุหรือบาดเจ็บ
@@ -1320,7 +1328,6 @@ function Dashboard({
         <DashboardMetricCard label="วันไม่มีอุบัติเหตุ (LTI)" value={daysSinceLastLti ?? "-"} icon={ClipboardCheck} tone="emerald" />
         <DashboardMetricCard label="PPE ใกล้หมดอายุ" value={ppeSoon} icon={HardHat} tone="amber" />
         <DashboardMetricCard label="อุปกรณ์ต้องเฝ้าระวัง" value={equipmentAttention} icon={Wrench} tone="red" />
-        <DashboardMetricCard label="หลักสูตรยังไม่ผ่าน" value={trainingGaps.length} icon={GraduationCap} tone="amber" />
         <DashboardMetricCard label="การกระทำไม่ปลอดภัยใน 30 วัน" value={noncompliance30d} icon={ShieldAlert} tone="slate" />
         <DashboardMetricCard label="ข้อบกพร่องจากการตรวจพื้นที่ที่ยังไม่ปิด" value={openInspectionFindings.length} icon={Search} tone="red" />
       </div>
@@ -1425,26 +1432,24 @@ function Dashboard({
       <div>
         <p className="text-sm font-bold text-slate-900 mb-3">หลักสูตรที่ยังไม่ผ่านตาม Training Matrix</p>
         <Card className="p-0 overflow-hidden">
-          {trainingGaps.length === 0 ? (
+          {courseGapList.length === 0 ? (
             <p className="text-sm text-slate-400 p-4">พนักงานทุกคนผ่านหลักสูตรที่กำหนดครบแล้ว</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2.5 font-bold">พนักงาน</th>
                     <th className="px-4 py-2.5 font-bold">หลักสูตร</th>
-                    <th className="px-4 py-2.5 font-bold">สถานะ</th>
+                    <th className="px-4 py-2.5 font-bold">ยังไม่ผ่าน</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {trainingGaps.slice(0, 5).map((g, i) => (
-                    <tr key={i} className="border-t border-slate-100">
-                      <td className="px-4 py-2.5">{g.employee.name}</td>
-                      <td className="px-4 py-2.5 text-slate-500">
-                        {trainingCourses.find((c) => c.id === g.courseId)?.name ?? "-"}
+                  {courseGapList.slice(0, 5).map((c) => (
+                    <tr key={c.courseId} className="border-t border-slate-100">
+                      <td className="px-4 py-2.5 font-bold text-slate-900">{c.courseName}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge tone="bg-red-50 text-red-700">{c.notPassed}/{c.total} คน</Badge>
                       </td>
-                      <td className="px-4 py-2.5"><Badge tone={trainingStatusTone(g.status)}>{trainingStatusLabel[g.status]}</Badge></td>
                     </tr>
                   ))}
                 </tbody>
