@@ -74,6 +74,7 @@ function mapIncidentRow(row, injuredRows, updateRows, updatedByNameById) {
     probableCause: row.probable_cause || "-",
     reporterName: row.reporter_name || "-",
     reporterPhone: row.reporter_phone || "-",
+    photoPath: row.photo_path || null,
     injuredEmployees: (injuredRows || []).map((e) => ({
       rowId: e.id,
       employeeId: e.employee_id,
@@ -543,6 +544,7 @@ function mapMachineryInspectionRow(row) {
     engineerName: row.engineer_name || "-",
     engineerLicenseNumber: row.engineer_license_number || "-",
     certificateNumber: row.certificate_number || "-",
+    certificateFilePath: row.certificate_file_path || null,
     result: machineryResultDbToUi[row.result] || row.result,
     findings: row.findings || "-",
     correctiveDeadline: row.corrective_deadline,
@@ -1460,7 +1462,7 @@ function Dashboard({
 // Incidents
 // ---------------------------------------------------------------
 
-function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees }) {
+function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees, organizationId }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [locationMode, setLocationMode] = useState("select"); // "select" | "custom"
@@ -1468,7 +1470,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
     location: "", type: "หกล้ม", severity: "ปานกลาง", description: "",
     incidentDate: todayIso(), incidentTime: "", department: "",
     firstAidGiven: "", probableCause: "", reporterName: "", reporterPhone: "",
-    injuredEmployees: [],
+    injuredEmployees: [], photoPath: null,
   });
   const [newInjured, setNewInjured] = useState({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
   const positionOf = (id) => employees.find((e) => e.id === id)?.position ?? "-";
@@ -1519,12 +1521,13 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
       reporterName: form.reporterName || "-",
       reporterPhone: form.reporterPhone || "-",
       updates: [],
+      photoPath: form.photoPath,
     });
     setForm({
       location: "", type: "หกล้ม", severity: "ปานกลาง", description: "",
       incidentDate: todayIso(), incidentTime: "", department: "",
       firstAidGiven: "", probableCause: "", reporterName: "", reporterPhone: "",
-      injuredEmployees: [],
+      injuredEmployees: [], photoPath: null,
     });
     setNewInjured({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
     setShowForm(false);
@@ -1543,6 +1546,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
         onAddInjured={onAddInjured}
         onUpdateInjured={onUpdateInjured}
         onRemoveInjured={onRemoveInjured}
+        organizationId={organizationId}
       />
     );
   }
@@ -1760,6 +1764,16 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
             />
           </div>
           <div className="mb-3">
+            <label className="text-xs font-bold text-slate-500 block mb-1">รูปประกอบเหตุการณ์ (ถ้ามี)</label>
+            <FileUploadField
+              value={form.photoPath}
+              onChange={(path) => setForm({ ...form, photoPath: path })}
+              organizationId={organizationId}
+              folder="incidents"
+              kind="image"
+            />
+          </div>
+          <div className="mb-3">
             <label className="text-xs font-bold text-slate-500 block mb-1">การปฐมพยาบาลเบื้องต้นที่ทำไปแล้ว</label>
             <textarea
               rows={2}
@@ -1862,7 +1876,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
 // Incident detail — แก้ไขสถานะ/รายละเอียด และบันทึกความคืบหน้า
 // ---------------------------------------------------------------
 
-function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, onRemoveProgress, onAddInjured, onUpdateInjured, onRemoveInjured }) {
+function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, onRemoveProgress, onAddInjured, onUpdateInjured, onRemoveInjured, organizationId }) {
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState({
     location: incident.location,
@@ -1875,6 +1889,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
     probableCause: incident.probableCause === "-" ? "" : incident.probableCause,
     reporterName: incident.reporterName === "-" ? "" : incident.reporterName,
     reporterPhone: incident.reporterPhone === "-" ? "" : incident.reporterPhone,
+    photoPath: incident.photoPath || null,
   });
   const [progressNote, setProgressNote] = useState("");
   const [progressStatus, setProgressStatus] = useState("");
@@ -1896,6 +1911,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
       probableCause: edit.probableCause || "-",
       reporterName: edit.reporterName || "-",
       reporterPhone: edit.reporterPhone || "-",
+      photoPath: edit.photoPath,
     });
     setEditing(false);
   };
@@ -1960,6 +1976,9 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
         {!editing ? (
           <div className="space-y-3 text-sm">
             <p className="text-slate-700 whitespace-pre-wrap">{incident.description}</p>
+            {incident.photoPath && (
+              <div><FileLinkPreview path={incident.photoPath} label="📎 ดูรูปประกอบเหตุการณ์" /></div>
+            )}
             <div className="grid sm:grid-cols-2 gap-x-4 gap-y-2 pt-2 border-t border-slate-100">
               <p><span className="text-slate-500">การปฐมพยาบาลเบื้องต้น:</span> {incident.firstAidGiven}</p>
               <p><span className="text-slate-500">สาเหตุเบื้องต้นที่คาดว่าเป็นไปได้:</span> {incident.probableCause}</p>
@@ -2025,6 +2044,16 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                 value={edit.description}
                 onChange={(e) => setEdit({ ...edit, description: e.target.value })}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">รูปประกอบเหตุการณ์ (ถ้ามี)</label>
+              <FileUploadField
+                value={edit.photoPath}
+                onChange={(path) => setEdit({ ...edit, photoPath: path })}
+                organizationId={organizationId}
+                folder="incidents"
+                kind="image"
               />
             </div>
             <div>
@@ -4520,10 +4549,10 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
 // ---------------------------------------------------------------
 // ทะเบียนเครื่องจักร — แยกจากอุปกรณ์ความปลอดภัย ต้องมีวิศวกรที่ขึ้นทะเบียนมาตรวจ/รับรอง
 // ---------------------------------------------------------------
-function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteInspection, onDeleteMachinery }) {
+function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteInspection, onDeleteMachinery, organizationId }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ result: "ผ่าน", engineerName: "", engineerLicenseNumber: "", certificateNumber: "", findings: "", correctiveDeadline: "" });
+  const [form, setForm] = useState({ result: "ผ่าน", engineerName: "", engineerLicenseNumber: "", certificateNumber: "", certificateFilePath: null, findings: "", correctiveDeadline: "" });
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState({ name: machineryCategoryOptions[0], code: "", location: "", frequencyMonths: "12" });
 
@@ -4540,11 +4569,12 @@ function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteIns
         engineerName: form.engineerName || "-",
         engineerLicenseNumber: form.engineerLicenseNumber || "-",
         certificateNumber: form.certificateNumber || "-",
+        certificateFilePath: form.certificateFilePath,
         result: form.result,
         findings: form.findings || "-",
         correctiveDeadline: needsDeadline ? form.correctiveDeadline : null,
       });
-      setForm({ result: "ผ่าน", engineerName: "", engineerLicenseNumber: "", certificateNumber: "", findings: "", correctiveDeadline: "" });
+      setForm({ result: "ผ่าน", engineerName: "", engineerLicenseNumber: "", certificateNumber: "", certificateFilePath: null, findings: "", correctiveDeadline: "" });
       setShowForm(false);
     };
 
@@ -4606,6 +4636,16 @@ function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteIns
               <input value={form.certificateNumber} onChange={(e) => setForm({ ...form, certificateNumber: e.target.value })} placeholder="เช่น CR-2569-018" className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
             </div>
             <div className="mb-3">
+              <label className="text-xs font-bold text-slate-500 block mb-1">ไฟล์ใบรับรองการตรวจ (PDF)</label>
+              <FileUploadField
+                value={form.certificateFilePath}
+                onChange={(path) => setForm({ ...form, certificateFilePath: path })}
+                organizationId={organizationId}
+                folder="machinery-certificates"
+                kind="pdf"
+              />
+            </div>
+            <div className="mb-3">
               <label className="text-xs font-bold text-slate-500 block mb-1">ข้อสังเกต/รายละเอียด</label>
               <textarea rows={2} value={form.findings} onChange={(e) => setForm({ ...form, findings: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none" />
             </div>
@@ -4639,6 +4679,9 @@ function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteIns
                 </div>
                 <p className="text-sm text-slate-700 mt-1">วิศวกร: {h.engineerName} · เลขใบอนุญาต: {h.engineerLicenseNumber}</p>
                 <p className="text-sm text-slate-500 mt-0.5">เลขที่ใบรับรอง: {h.certificateNumber}</p>
+                {h.certificateFilePath && (
+                  <div className="mt-1"><FileLinkPreview path={h.certificateFilePath} label="📎 ดูไฟล์ใบรับรอง" /></div>
+                )}
                 {h.findings !== "-" && <p className="text-sm text-slate-600 mt-1">{h.findings}</p>}
                 {h.correctiveDeadline && (
                   <p className="text-sm text-red-600 mt-1">กำหนดแก้ไขภายในวันที่ {formatThaiDate(h.correctiveDeadline)}</p>
@@ -7765,7 +7808,7 @@ export default function JorPorPrototype() {
     setIncidentsLoading(true);
     const { data: incidentRows, error } = await supabase
       .from("incidents")
-      .select("id, location, injury_type, severity, incident_date, incident_time, department, status, description, first_aid_given, probable_cause, reporter_name, reporter_phone")
+      .select("id, location, injury_type, severity, incident_date, incident_time, department, status, description, first_aid_given, probable_cause, reporter_name, reporter_phone, photo_path")
       .order("incident_date", { ascending: false });
     if (error) {
       console.error("fetchIncidents error:", error);
@@ -7833,6 +7876,7 @@ export default function JorPorPrototype() {
         probable_cause: inc.probableCause === "-" ? null : inc.probableCause,
         reporter_name: inc.reporterName === "-" ? null : inc.reporterName,
         reporter_phone: inc.reporterPhone === "-" ? null : inc.reporterPhone,
+        photo_path: inc.photoPath || null,
       })
       .select()
       .single();
@@ -7877,6 +7921,7 @@ export default function JorPorPrototype() {
     if (fields.probableCause !== undefined) payload.probable_cause = fields.probableCause === "-" ? null : fields.probableCause;
     if (fields.reporterName !== undefined) payload.reporter_name = fields.reporterName === "-" ? null : fields.reporterName;
     if (fields.reporterPhone !== undefined) payload.reporter_phone = fields.reporterPhone === "-" ? null : fields.reporterPhone;
+    if (fields.photoPath !== undefined) payload.photo_path = fields.photoPath || null;
     const { error } = await supabase.from("incidents").update(payload).eq("id", incidentId);
     if (error) {
       alert("บันทึกการแก้ไขไม่สำเร็จ: " + error.message);
@@ -9196,7 +9241,7 @@ export default function JorPorPrototype() {
     if (machineryIds.length > 0) {
       const { data: inspectionRows } = await supabase
         .from("machinery_inspection_records")
-        .select("id, machinery_id, inspected_at, engineer_name, engineer_license_number, certificate_number, result, findings, corrective_deadline")
+        .select("id, machinery_id, inspected_at, engineer_name, engineer_license_number, certificate_number, certificate_file_path, result, findings, corrective_deadline")
         .in("machinery_id", machineryIds)
         .order("inspected_at", { ascending: false });
       (inspectionRows || []).forEach((r) => {
@@ -9251,6 +9296,7 @@ export default function JorPorPrototype() {
         engineer_name: record.engineerName === "-" ? null : record.engineerName,
         engineer_license_number: record.engineerLicenseNumber === "-" ? null : record.engineerLicenseNumber,
         certificate_number: record.certificateNumber === "-" ? null : record.certificateNumber,
+        certificate_file_path: record.certificateFilePath || null,
         result: machineryResultUiToDb[record.result] || "pass",
         findings: record.findings === "-" ? null : record.findings,
         corrective_deadline: record.correctiveDeadline,
@@ -9394,6 +9440,7 @@ export default function JorPorPrototype() {
             onRemoveInjured={removeInjuredEmployee}
             locations={locations}
             employees={employees}
+            organizationId={currentUser.organizationId}
           />
         )}
         {page === "ppe" && (
@@ -9461,6 +9508,7 @@ export default function JorPorPrototype() {
             onAddMachinery={addMachinery}
             onDeleteInspection={deleteMachineryInspection}
             onDeleteMachinery={deleteMachineryUnit}
+            organizationId={currentUser.organizationId}
           />
         )}
         {page === "locations" && (
