@@ -322,6 +322,7 @@ function mapChemicalRow(row) {
     hazardType: row.hazard_type || "-",
     ppeRequired: row.ppe_required || [],
     sdsStatus: row.sds_status || "pending",
+    sdsFilePath: row.sds_file_path || null,
     recordedDate: row.recorded_date ? row.recorded_date.slice(0, 10) : "",
   };
 }
@@ -366,8 +367,7 @@ function mapMeasurementRowsToRounds(rows) {
         notes: r.notes || "-",
         correctionStatus: r.correction_status || "none",
         points: [],
-        planFileName: null,
-        planFileUrl: null,
+        planFilePath: r.plan_file_path || null,
       };
     }
     groups[key].rowIds.push(r.id);
@@ -769,7 +769,7 @@ const initialEnvironmentalMeasurements = [
       { label: "จุดที่ 3 ใกล้ทางเข้า", value: 79, result: "pass" },
     ],
     failCount: 1, result: "fail", correctionStatus: "in_progress",
-    planFileName: null, planFileUrl: null,
+    planFilePath: null,
   },
   {
     id: 2, locationId: 3, measurementType: "chemical_vapor", unit: "ppm", standardLimit: 25,
@@ -780,7 +780,7 @@ const initialEnvironmentalMeasurements = [
       { label: "จุดที่ 2 กลางห้องปฏิบัติการ", value: 8, result: "pass" },
     ],
     failCount: 0, result: "pass",
-    planFileName: null, planFileUrl: null,
+    planFilePath: null,
   },
   {
     id: 3, locationId: 4, measurementType: "ventilation", unit: "ACH", standardLimit: 10,
@@ -790,7 +790,7 @@ const initialEnvironmentalMeasurements = [
       { label: "จุดที่ 1 ทางเข้าถังปฏิกรณ์", value: 8, result: "fail" },
     ],
     failCount: 1, result: "fail", correctionStatus: "none",
-    planFileName: null, planFileUrl: null,
+    planFilePath: null,
   },
 ];
 
@@ -1139,9 +1139,12 @@ async function getSignedFileUrl(path) {
 
 // ช่องอัปโหลดไฟล์ที่ใช้ซ้ำได้ — value คือ storage path ที่เก็บไว้ในฐานข้อมูล (ไม่ใช่ไฟล์ตรงๆ)
 // เพราะไฟล์เก็บอยู่ที่ Supabase Storage แยกจากฐานข้อมูลตาราง
-function FileUploadField({ value, onChange, organizationId, folder, accept = "image/*,application/pdf" }) {
+function FileUploadField({ value, onChange, organizationId, folder, kind = "image" }) {
   const [uploading, setUploading] = useState(false);
   const [url, setUrl] = useState(null);
+
+  const accept = kind === "pdf" ? "application/pdf" : "image/*";
+  const kindLabel = kind === "pdf" ? "ไฟล์ PDF" : "ไฟล์รูปภาพ";
 
   useEffect(() => {
     let cancelled = false;
@@ -1156,6 +1159,12 @@ function FileUploadField({ value, onChange, organizationId, folder, accept = "im
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    const isValidType = kind === "pdf" ? file.type === "application/pdf" : file.type.startsWith("image/");
+    if (!isValidType) {
+      alert(`รับเฉพาะ${kindLabel}เท่านั้น (ไฟล์ที่เลือกเป็น ${file.type || "ไม่ทราบประเภท"})`);
+      e.target.value = "";
+      return;
+    }
     if (file.size > 10 * 1024 * 1024) {
       alert("ไฟล์ใหญ่เกินไป (จำกัดไม่เกิน 10MB ต่อไฟล์)");
       e.target.value = "";
@@ -3300,11 +3309,11 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
 }
 
 
-function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete }) {
+function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete, organizationId }) {
   const [showForm, setShowForm] = useState(false);
   const emptyForm = {
     name: "", casNumber: "", quantity: "", unit: "", storageLocation: "",
-    hazardType: "", ppeRequired: [], sdsStatus: "pending", recordedDate: todayIso(),
+    hazardType: "", ppeRequired: [], sdsStatus: "pending", sdsFilePath: null, recordedDate: todayIso(),
   };
   const [form, setForm] = useState(emptyForm);
 
@@ -3421,7 +3430,7 @@ function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete }) {
           <div className="grid sm:grid-cols-2 gap-3 mb-4">
             <div>
               <label className="text-xs font-bold text-slate-500 block mb-1">ไฟล์ SDS แนบแล้วหรือยัง</label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 mb-2">
                 {["pending", "attached"].map((s) => (
                   <button
                     key={s}
@@ -3434,6 +3443,13 @@ function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete }) {
                   </button>
                 ))}
               </div>
+              <FileUploadField
+                value={form.sdsFilePath}
+                onChange={(path) => setForm({ ...form, sdsFilePath: path, sdsStatus: path ? "attached" : "pending" })}
+                organizationId={organizationId}
+                folder="chemicals-sds"
+                kind="pdf"
+              />
             </div>
             <div>
               <label className="text-xs font-bold text-slate-500 block mb-1">วันที่บันทึก</label>
@@ -3491,7 +3507,12 @@ function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete }) {
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-2.5"><Badge tone={sdsStatusTone(c.sdsStatus)}>{sdsStatusLabel[c.sdsStatus]}</Badge></td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <Badge tone={sdsStatusTone(c.sdsStatus)}>{sdsStatusLabel[c.sdsStatus]}</Badge>
+                      {c.sdsFilePath && <FileLinkPreview path={c.sdsFilePath} label="ดูไฟล์" />}
+                    </div>
+                  </td>
                   <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(c.recordedDate)}</td>
                   <td className="px-4 py-2.5 text-right"><ConfirmDeleteButton onConfirm={() => onDelete(c.id)} /></td>
                 </tr>
@@ -5563,7 +5584,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
 const hazardOptions = Object.keys(hazardTypeLabel);
 const riskLevelOptions = ["low", "medium", "high", "critical"];
 
-function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
+function MeasurementSubForm({ onSubmit, onCancel, initialRecord, organizationId }) {
   const isEditMode = !!initialRecord;
   const [shared, setShared] = useState(
     initialRecord
@@ -5579,23 +5600,11 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
       ? initialRecord.points.map((p, i) => ({ id: i + 1, label: p.label, value: String(p.value), result: p.result }))
       : [{ id: 1, label: "จุดที่ 1", value: "", result: "pass" }]
   );
-  const [planFile, setPlanFile] = useState(
-    initialRecord?.planFileUrl ? { name: initialRecord.planFileName, dataUrl: initialRecord.planFileUrl } : null
-  );
-  const planInputRef = useRef(null);
+  const [planFilePath, setPlanFilePath] = useState(initialRecord?.planFilePath || null);
 
   const addPoint = () => setPoints([...points, { id: Date.now(), label: `จุดที่ ${points.length + 1}`, value: "", result: "pass" }]);
   const removePoint = (id) => setPoints(points.filter((p) => p.id !== id));
   const updatePoint = (id, field, value) => setPoints(points.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
-
-  const handlePlanFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPlanFile({ name: file.name, dataUrl: reader.result });
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
 
   const submit = () => {
     const validPoints = points.filter((p) => p.label.trim() && p.value !== "");
@@ -5608,8 +5617,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
       measuredAt: shared.measuredAt,
       nextDue: shared.nextDue || null,
       notes: shared.notes || "-",
-      planFileName: planFile?.name || null,
-      planFileUrl: planFile?.dataUrl || null,
+      planFilePath,
       points: validPoints.map((p) => ({ label: p.label, value: Number(p.value), result: p.result })),
       failCount,
       result: failCount > 0 ? "fail" : "pass",
@@ -5725,24 +5733,14 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord }) {
       </div>
 
       <div className="mb-4">
-        <label className="text-xs font-bold text-slate-500 block mb-1">แผนผังตำแหน่งจุดย่อย (ถ้ามี)</label>
-        <input ref={planInputRef} type="file" accept="image/*,.pdf" onChange={handlePlanFileChange} className="hidden" />
-        {planFile ? (
-          <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-sm">
-            <span className="text-slate-700 truncate">{planFile.name}</span>
-            <div className="flex gap-2">
-              <button onClick={() => planInputRef.current?.click()} className="text-xs text-slate-500 underline">เปลี่ยนไฟล์</button>
-              <button onClick={() => setPlanFile(null)} className="text-xs text-red-600 underline">ลบ</button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => planInputRef.current?.click()}
-            className="w-full border border-dashed border-slate-300 rounded-lg py-4 text-center text-slate-400 hover:border-slate-400 hover:text-slate-500 text-sm"
-          >
-            แตะเพื่อแนบไฟล์แผนผัง (รูปภาพหรือ PDF)
-          </button>
-        )}
+        <label className="text-xs font-bold text-slate-500 block mb-1">แผนผังตำแหน่งจุดย่อย/รายงานผลตรวจ (ถ้ามี)</label>
+        <FileUploadField
+          value={planFilePath}
+          onChange={setPlanFilePath}
+          organizationId={organizationId}
+          folder="environmental-measurements"
+          kind="pdf"
+        />
       </div>
 
       <div className="mb-4">
@@ -5830,14 +5828,10 @@ function MeasurementRecordCard({ record, showLocationName, locationName, onEdit,
         </div>
       )}
 
-      {record.planFileUrl && (
-        <a
-          href={record.planFileUrl}
-          download={record.planFileName || "floor-plan"}
-          className="inline-flex items-center gap-1 text-xs text-slate-500 underline hover:text-slate-700 mt-3"
-        >
-          📎 ดูไฟล์แผนผัง: {record.planFileName}
-        </a>
+      {record.planFilePath && (
+        <div className="mt-3">
+          <FileLinkPreview path={record.planFilePath} label="📎 ดูไฟล์แผนผัง/รายงานผลตรวจ" />
+        </div>
       )}
 
       {record.notes && record.notes !== "-" && (
@@ -5863,7 +5857,7 @@ function MeasurementRecordCard({ record, showLocationName, locationName, onEdit,
   );
 }
 
-function LocationDetail({ location, incidents, measurements, onBack, onUpdate, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement }) {
+function LocationDetail({ location, incidents, measurements, onBack, onUpdate, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
   const [editingAssessment, setEditingAssessment] = useState(false);
   const [showMeasurementForm, setShowMeasurementForm] = useState(false);
   const [editingMeasurementId, setEditingMeasurementId] = useState(null);
@@ -6207,6 +6201,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
               onAddMeasurement({ id: Date.now(), locationId: location.id, ...data });
               setShowMeasurementForm(false);
             }}
+            organizationId={organizationId}
           />
         )}
 
@@ -6218,6 +6213,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
               onUpdateMeasurement(editingMeasurementId, data);
               setEditingMeasurementId(null);
             }}
+            organizationId={organizationId}
           />
         )}
 
@@ -6243,7 +6239,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
   );
 }
 
-function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, onDelete, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement }) {
+function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, onDelete, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", building: "", description: "", riskLevel: "low", hazards: [], ppeRequired: [] });
@@ -6260,6 +6256,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
         onAddMeasurement={onAddMeasurement}
         onUpdateMeasurement={onUpdateMeasurement}
         onDeleteMeasurement={onDeleteMeasurement}
+        organizationId={organizationId}
       />
     );
   }
@@ -6476,7 +6473,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
 // Environmental monitoring — บันทึกผลตรวจวัดสิ่งแวดล้อม ผูกกับสถานที่
 // ---------------------------------------------------------------
 
-function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateMeasurement, onDeleteMeasurement }) {
+function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
   const [showForm, setShowForm] = useState(false);
   const [locationId, setLocationId] = useState(locations[0]?.id ?? "");
   const [editingId, setEditingId] = useState(null);
@@ -6524,6 +6521,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
               onAdd({ id: Date.now(), locationId: locationId, ...data });
               setShowForm(false);
             }}
+            organizationId={organizationId}
           />
         </div>
       )}
@@ -6536,6 +6534,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
             onUpdateMeasurement(editingId, data);
             setEditingId(null);
           }}
+          organizationId={organizationId}
         />
       )}
 
@@ -8395,7 +8394,7 @@ export default function JorPorPrototype() {
     setChemicalsLoading(true);
     const { data, error } = await supabase
       .from("chemicals")
-      .select("id, name, cas_number, quantity, unit, storage_location, hazard_type, ppe_required, sds_status, recorded_date")
+      .select("id, name, cas_number, quantity, unit, storage_location, hazard_type, ppe_required, sds_status, sds_file_path, recorded_date")
       .order("recorded_date", { ascending: false });
     if (error) {
       console.error("fetchChemicals error:", error);
@@ -8420,6 +8419,7 @@ export default function JorPorPrototype() {
         hazard_type: form.hazardType || null,
         ppe_required: form.ppeRequired,
         sds_status: form.sdsStatus,
+        sds_file_path: form.sdsFilePath || null,
         recorded_by: currentUser.id,
         recorded_date: form.recordedDate,
       })
@@ -8790,7 +8790,7 @@ export default function JorPorPrototype() {
     setEnvironmentalLoading(true);
     const { data, error } = await supabase
       .from("environmental_measurements")
-      .select("id, location_id, measurement_type, measured_value, unit, standard_limit, point_label, result, measured_at, next_measurement_due, notes, correction_status")
+      .select("id, location_id, measurement_type, measured_value, unit, standard_limit, point_label, result, measured_at, next_measurement_due, notes, correction_status, plan_file_path")
       .order("measured_at", { ascending: false });
     if (error) {
       console.error("fetchEnvironmentalMeasurements error:", error);
@@ -8818,6 +8818,7 @@ export default function JorPorPrototype() {
       next_measurement_due: record.nextDue,
       notes: record.notes === "-" ? null : record.notes,
       correction_status: "none",
+      plan_file_path: record.planFilePath || null,
     }));
     const { data, error } = await supabase.from("environmental_measurements").insert(rows).select();
     if (error) {
@@ -8854,6 +8855,7 @@ export default function JorPorPrototype() {
         next_measurement_due: fields.nextDue,
         notes: fields.notes === "-" ? null : fields.notes,
         correction_status: round.correctionStatus || "none",
+        plan_file_path: fields.planFilePath !== undefined ? fields.planFilePath : round.planFilePath || null,
       }));
       const { data, error } = await supabase.from("environmental_measurements").insert(rows).select();
       if (error) {
@@ -9410,7 +9412,7 @@ export default function JorPorPrototype() {
           <UnsafeActsPage employees={employees} locations={locations} records={noncompliance} onAdd={addNoncompliance} onDelete={deleteNoncompliance} />
         )}
         {page === "chemicals" && (
-          <ChemicalsPage chemicals={chemicals} currentUserName={currentUser.name} onAdd={addChemical} onDelete={deleteChemical} />
+          <ChemicalsPage chemicals={chemicals} currentUserName={currentUser.name} onAdd={addChemical} onDelete={deleteChemical} organizationId={currentUser.organizationId} />
         )}
         {page === "safetyInspections" && (
           <SafetyInspectionsPage
@@ -9472,6 +9474,7 @@ export default function JorPorPrototype() {
             onAddMeasurement={addEnvironmentalMeasurement}
             onUpdateMeasurement={updateEnvironmentalMeasurement}
             onDeleteMeasurement={deleteEnvironmentalMeasurement}
+            organizationId={currentUser.organizationId}
           />
         )}
         {page === "employees" && (
@@ -9497,6 +9500,7 @@ export default function JorPorPrototype() {
             onAdd={addEnvironmentalMeasurement}
             onUpdateMeasurement={updateEnvironmentalMeasurement}
             onDeleteMeasurement={deleteEnvironmentalMeasurement}
+            organizationId={currentUser.organizationId}
           />
         )}
         {page === "trainingMatrix" && (
