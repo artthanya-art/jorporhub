@@ -1115,6 +1115,106 @@ function ConfirmDeleteButton({ onConfirm, label = "ลบ", className = "" }) {
 }
 
 // ---------------------------------------------------------------
+// อัปโหลดไฟล์ (Supabase Storage, bucket "attachments" แบบ private)
+// เก็บ path ตามรูปแบบ {organization_id}/{folder}/{timestamp}_{ชื่อไฟล์} เพื่อให้ RLS
+// จำกัดสิทธิ์ตามองค์กรได้ (ดู setup_storage_bucket.sql)
+// ---------------------------------------------------------------
+async function uploadFileToStorage(file, organizationId, folder) {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${organizationId}/${folder}/${Date.now()}_${safeName}`;
+  const { error } = await supabase.storage.from("attachments").upload(path, file);
+  if (error) throw error;
+  return path;
+}
+
+async function getSignedFileUrl(path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("attachments").createSignedUrl(path, 3600);
+  if (error) {
+    console.error("getSignedFileUrl error:", error);
+    return null;
+  }
+  return data.signedUrl;
+}
+
+// ช่องอัปโหลดไฟล์ที่ใช้ซ้ำได้ — value คือ storage path ที่เก็บไว้ในฐานข้อมูล (ไม่ใช่ไฟล์ตรงๆ)
+// เพราะไฟล์เก็บอยู่ที่ Supabase Storage แยกจากฐานข้อมูลตาราง
+function FileUploadField({ value, onChange, organizationId, folder, accept = "image/*,application/pdf" }) {
+  const [uploading, setUploading] = useState(false);
+  const [url, setUrl] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (value) {
+      getSignedFileUrl(value).then((u) => { if (!cancelled) setUrl(u); });
+    } else {
+      setUrl(null);
+    }
+    return () => { cancelled = true; };
+  }, [value]);
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("ไฟล์ใหญ่เกินไป (จำกัดไม่เกิน 10MB ต่อไฟล์)");
+      e.target.value = "";
+      return;
+    }
+    setUploading(true);
+    try {
+      const path = await uploadFileToStorage(file, organizationId, folder);
+      onChange(path);
+    } catch (err) {
+      alert("อัปโหลดไฟล์ไม่สำเร็จ: " + err.message);
+    }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <input
+          type="file"
+          accept={accept}
+          onChange={handleFile}
+          disabled={uploading}
+          className="text-xs text-slate-600 file:mr-2 file:px-2.5 file:py-1.5 file:rounded-lg file:border-0 file:bg-slate-900 file:text-white file:text-xs"
+        />
+        {uploading && <span className="text-xs text-slate-400">กำลังอัปโหลด...</span>}
+      </div>
+      {url && (
+        <div className="flex items-center gap-2 mt-1.5">
+          <a href={url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline">
+            ดูไฟล์ที่แนบไว้
+          </a>
+          <button onClick={() => onChange(null)} className="text-xs text-slate-400 underline hover:text-red-600">
+            ลบไฟล์แนบ
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ลิงก์ดูไฟล์ที่แนบไว้แล้วแบบอ่านอย่างเดียว (ใช้ตอนแสดงผล ไม่ใช่ตอนอัปโหลด)
+function FileLinkPreview({ path, label }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    getSignedFileUrl(path).then((u) => { if (!cancelled) setUrl(u); });
+    return () => { cancelled = true; };
+  }, [path]);
+  if (!url) return null;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline">
+      {label}
+    </a>
+  );
+}
+
+// ---------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------
 
@@ -2823,7 +2923,7 @@ const sdsStatusTone = (s) => (s === "attached" ? "bg-emerald-50 text-emerald-700
 // บันทึกตรวจความปลอดภัย — ตามแบบฟอร์ม "Safety Inspection Record Form"
 // รอบตรวจ 1 รอบ อาจพบข้อบกพร่องได้หลายข้อ แต่ละข้อติดตามสถานะแยกกันได้
 // ---------------------------------------------------------------
-function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding }) {
+function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId }) {
   const [selectedId, setSelectedId] = useState(null);
   const selected = inspections.find((i) => i.id === selectedId);
 
@@ -2836,6 +2936,7 @@ function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFi
         onAddFinding={onAddFinding}
         onUpdateFinding={onUpdateFinding}
         onDeleteFinding={onDeleteFinding}
+        organizationId={organizationId}
       />
     );
   }
@@ -2846,20 +2947,21 @@ function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFi
       onAdd={onAdd}
       onDelete={onDelete}
       onSelect={setSelectedId}
+      organizationId={organizationId}
     />
   );
 }
 
-function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect }) {
+function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organizationId }) {
   const [showForm, setShowForm] = useState(false);
   const emptyForm = { inspectionDate: todayIso(), areaDepartment: "", topic: "", inspectorName: "", inspectionCycle: "", approverName: "", findings: [] };
   const [form, setForm] = useState(emptyForm);
-  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
 
   const addFindingToForm = () => {
     if (!form.finding && !newFinding.finding.trim()) return;
     setForm({ ...form, findings: [...form.findings, { ...newFinding, tempId: Date.now() }] });
-    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   };
   const removeFindingFromForm = (tempId) => setForm({ ...form, findings: form.findings.filter((f) => f.tempId !== tempId) });
 
@@ -2947,6 +3049,15 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect }) {
                 </div>
               </div>
               <textarea rows={2} value={newFinding.correctiveAction} onChange={(e) => setNewFinding({ ...newFinding, correctiveAction: e.target.value })} placeholder="มาตรการแก้ไข" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none" />
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ภาพถ่ายก่อนแก้ไข</label>
+                <FileUploadField
+                  value={newFinding.photoBefore}
+                  onChange={(path) => setNewFinding({ ...newFinding, photoBefore: path })}
+                  organizationId={organizationId}
+                  folder="safety-inspections"
+                />
+              </div>
               <div className="flex justify-end">
                 <button onClick={addFindingToForm} className="flex items-center gap-1.5 text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg">
                   <Plus size={13} /> เพิ่มในรายการ
@@ -3012,8 +3123,8 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect }) {
   );
 }
 
-function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding }) {
-  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId }) {
+  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   const [editingRowId, setEditingRowId] = useState(null);
   const [editForm, setEditForm] = useState(null);
 
@@ -3025,15 +3136,15 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
       dueDate: f.dueDate || "",
       status: f.status,
       actualCompletionDate: f.actualCompletionDate || "",
-      photoAfterOrEvidence: f.photoAfterOrEvidence === "-" ? "" : f.photoAfterOrEvidence,
+      photoAfterOrEvidence: f.photoAfterOrEvidence === "-" ? null : f.photoAfterOrEvidence,
       isDocumentationFix: f.isDocumentationFix,
     });
   };
 
   const saveEdit = (rowId) => {
     // บังคับให้มีภาพถ่ายหลังแก้ไข/หลักฐานก่อนปิดเคส เว้นแต่เป็นการแก้ไขเชิงเอกสาร/นโยบาย (ตามฟอร์มต้นฉบับ)
-    if (editForm.status === "ปิดเคสแล้ว" && !editForm.isDocumentationFix && !editForm.photoAfterOrEvidence.trim()) {
-      alert("ต้องแนบภาพถ่ายหลังแก้ไข (หรือติ๊ก 'แก้ไขเชิงเอกสาร/นโยบาย' แล้วระบุหลักฐานอื่นแทน) ก่อนปิดเคส");
+    if (editForm.status === "ปิดเคสแล้ว" && !editForm.isDocumentationFix && !editForm.photoAfterOrEvidence) {
+      alert("ต้องแนบภาพถ่ายหลังแก้ไข (หรือติ๊ก 'แก้ไขเชิงเอกสาร/นโยบาย' แล้วแนบหลักฐานอื่นแทน) ก่อนปิดเคส");
       return;
     }
     onUpdateFinding(inspection.id, rowId, editForm);
@@ -3043,7 +3154,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
   const addFinding = () => {
     if (!newFinding.finding.trim()) return;
     onAddFinding(inspection.id, newFinding);
-    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   };
 
   return (
@@ -3098,9 +3209,14 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
                       </label>
                       <div>
                         <label className="text-xs font-bold text-slate-500 block mb-1">
-                          {editForm.isDocumentationFix ? "หลักฐานอื่น (เช่น สำเนา SOP ที่แก้ไข/รายชื่อผู้เข้าอบรม)" : "ภาพถ่ายหลังแก้ไข (ชื่อไฟล์/คำอธิบาย) *"}
+                          {editForm.isDocumentationFix ? "หลักฐานอื่น (เช่น สำเนา SOP ที่แก้ไข/รายชื่อผู้เข้าอบรม)" : "ภาพถ่ายหลังแก้ไข *"}
                         </label>
-                        <input value={editForm.photoAfterOrEvidence} onChange={(e) => setEditForm({ ...editForm, photoAfterOrEvidence: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                        <FileUploadField
+                          value={editForm.photoAfterOrEvidence}
+                          onChange={(path) => setEditForm({ ...editForm, photoAfterOrEvidence: path })}
+                          organizationId={organizationId}
+                          folder="safety-inspections"
+                        />
                       </div>
                       <div>
                         <label className="text-xs font-bold text-slate-500 block mb-1">วันที่แก้ไขเสร็จจริง</label>
@@ -3128,6 +3244,10 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
                     {f.dueDate && <>กำหนดเสร็จ {formatThaiDate(f.dueDate)} · </>}
                     {f.actualCompletionDate && <>เสร็จจริง {formatThaiDate(f.actualCompletionDate)}</>}
                   </p>
+                  <div className="flex gap-3 mt-1.5">
+                    {f.photoBefore !== "-" && <FileLinkPreview path={f.photoBefore} label="ภาพก่อนแก้ไข" />}
+                    {f.photoAfterOrEvidence !== "-" && <FileLinkPreview path={f.photoAfterOrEvidence} label={f.isDocumentationFix ? "หลักฐานอื่น" : "ภาพหลังแก้ไข"} />}
+                  </div>
                   <div className="flex justify-between items-center mt-2">
                     <ConfirmDeleteButton onConfirm={() => onDeleteFinding(inspection.id, f.rowId)} />
                     <button onClick={() => startEdit(f)} className="text-xs bg-slate-900 text-white px-2.5 py-1.5 rounded-lg">อัปเดต</button>
@@ -3160,6 +3280,15 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
           </div>
         </div>
         <textarea rows={2} value={newFinding.correctiveAction} onChange={(e) => setNewFinding({ ...newFinding, correctiveAction: e.target.value })} placeholder="มาตรการแก้ไข" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none mb-2" />
+        <div className="mb-2">
+          <label className="text-xs font-bold text-slate-500 block mb-1">ภาพถ่ายก่อนแก้ไข</label>
+          <FileUploadField
+            value={newFinding.photoBefore}
+            onChange={(path) => setNewFinding({ ...newFinding, photoBefore: path })}
+            organizationId={organizationId}
+            folder="safety-inspections"
+          />
+        </div>
         <div className="flex justify-end">
           <button onClick={addFinding} disabled={!newFinding.finding.trim()} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg disabled:opacity-40">
             <Plus size={15} /> เพิ่มข้อบกพร่อง
@@ -7371,6 +7500,7 @@ const NAV = [
   { key: "dashboard", label: "แดชบอร์ด", icon: LayoutDashboard },
   { key: "incidents", label: "อุบัติเหตุ", icon: AlertTriangle },
   { key: "unsafeActs", label: "การกระทำที่ไม่ปลอดภัย", icon: ShieldAlert },
+  { key: "safetyInspections", label: "บันทึกตรวจความปลอดภัย", icon: Search },
   { key: "environmental", label: "ตรวจวัดสิ่งแวดล้อม", icon: Wind },
   { key: "trainingMatrix", label: "Training Matrix", icon: GraduationCap },
   { key: "checklist", label: "ตรวจสอบ", icon: ClipboardCheck },
@@ -7388,7 +7518,6 @@ const NAV = [
   },
   { key: "machinery", label: "ทะเบียนเครื่องจักร", icon: Settings },
   { key: "chemicals", label: "ทะเบียนสารเคมี", icon: FlaskConical },
-  { key: "safetyInspections", label: "บันทึกตรวจความปลอดภัย", icon: Search },
   { key: "govReports", label: "รายงานราชการ", icon: FileText },
 ];
 
@@ -9292,6 +9421,7 @@ export default function JorPorPrototype() {
             onAddFinding={addSafetyInspectionFinding}
             onUpdateFinding={updateSafetyInspectionFinding}
             onDeleteFinding={deleteSafetyInspectionFinding}
+            organizationId={currentUser.organizationId}
           />
         )}
         {page === "govReports" && (
