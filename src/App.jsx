@@ -291,6 +291,11 @@ const safetyInspectionTopicOptions = [
 ];
 
 const inspectionCycleOptions = ["รายวัน", "รายสัปดาห์", "รายเดือน", "รายไตรมาส", "รายปี", "กรณีพิเศษ/เฉพาะกิจ"];
+const LOCATION_OTHER_OPTION = "อื่นๆ (ระบุเอง)";
+function safetyInspectionAreaLabel(insp, locations) {
+  if (insp.locationId) return locations.find((l) => l.id === insp.locationId)?.name ?? insp.areaDepartment;
+  return insp.areaDepartment;
+}
 const safetyInspectionStatusLabel = { open: "เปิดเคส", in_progress: "กำลังดำเนินการ", closed: "ปิดเคสแล้ว" };
 const safetyInspectionStatusOptions = Object.keys(safetyInspectionStatusLabel);
 const safetyInspectionStatusTone = (s) => {
@@ -305,6 +310,7 @@ function mapSafetyInspectionRow(row, findingRows) {
     inspectionNumber: row.inspection_number,
     inspectionDate: row.inspection_date ? row.inspection_date.slice(0, 10) : "",
     areaDepartment: row.area_department || "-",
+    locationId: row.location_id || null,
     topic: row.topic || [],
     inspectorName: row.inspector_name || "-",
     inspectionCycle: row.inspection_cycle || "-",
@@ -2982,7 +2988,7 @@ const sdsStatusTone = (s) => (s === "attached" ? "bg-emerald-50 text-emerald-700
 // บันทึกตรวจความปลอดภัย — ตามแบบฟอร์ม "Safety Inspection Record Form"
 // รอบตรวจ 1 รอบ อาจพบข้อบกพร่องได้หลายข้อ แต่ละข้อติดตามสถานะแยกกันได้
 // ---------------------------------------------------------------
-function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId }) {
+function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations }) {
   const [selectedId, setSelectedId] = useState(null);
   const selected = inspections.find((i) => i.id === selectedId);
 
@@ -2996,6 +3002,7 @@ function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFi
         onUpdateFinding={onUpdateFinding}
         onDeleteFinding={onDeleteFinding}
         organizationId={organizationId}
+        locations={locations}
       />
     );
   }
@@ -3007,13 +3014,14 @@ function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFi
       onDelete={onDelete}
       onSelect={setSelectedId}
       organizationId={organizationId}
+      locations={locations}
     />
   );
 }
 
-function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organizationId }) {
+function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organizationId, locations }) {
   const [showForm, setShowForm] = useState(false);
-  const emptyForm = { inspectionDate: todayIso(), areaDepartment: "", topics: [], inspectorName: "", inspectionCycle: inspectionCycleOptions[0], approverName: "", findings: [] };
+  const emptyForm = { inspectionDate: todayIso(), locationId: locations[0]?.id ?? LOCATION_OTHER_OPTION, areaDepartment: "", topics: [], inspectorName: "", inspectionCycle: inspectionCycleOptions[0], approverName: "", findings: [] };
   const [form, setForm] = useState(emptyForm);
   const toggleTopic = (t) => setForm((f) => ({ ...f, topics: f.topics.includes(t) ? f.topics.filter((x) => x !== t) : [...f.topics, t] }));
   const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
@@ -3027,7 +3035,10 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
 
   const submit = () => {
     if (!form.inspectionDate) return;
-    onAdd(form);
+    onAdd({
+      ...form,
+      locationId: form.locationId === LOCATION_OTHER_OPTION ? null : form.locationId,
+    });
     setForm(emptyForm);
     setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
     setShowForm(false);
@@ -3062,7 +3073,22 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
           </div>
           <div className="mb-3">
             <label className="text-xs font-bold text-slate-500 block mb-1">พื้นที่/แผนกที่ตรวจ</label>
-            <input value={form.areaDepartment} onChange={(e) => setForm({ ...form, areaDepartment: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            <select
+              value={form.locationId}
+              onChange={(e) => setForm({ ...form, locationId: e.target.value })}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            >
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              <option value={LOCATION_OTHER_OPTION}>{LOCATION_OTHER_OPTION}</option>
+            </select>
+            {form.locationId === LOCATION_OTHER_OPTION && (
+              <input
+                value={form.areaDepartment}
+                onChange={(e) => setForm({ ...form, areaDepartment: e.target.value })}
+                placeholder="ระบุพื้นที่/แผนกที่ไม่มีในทะเบียนสถานที่ทำงาน"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mt-2"
+              />
+            )}
           </div>
           <div className="mb-3">
             <label className="text-xs font-bold text-slate-500 block mb-1">หัวข้อที่ตรวจ (เลือกได้หลายข้อ)</label>
@@ -3172,7 +3198,7 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
                   <tr key={i.id} onClick={() => onSelect(i.id)} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-bold text-slate-900">{i.inspectionNumber}</td>
                     <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(i.inspectionDate)}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{i.areaDepartment}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{safetyInspectionAreaLabel(i, locations)}</td>
                     <td className="px-4 py-2.5 text-slate-500">{i.topic.join(", ") || "-"}</td>
                     <td className="px-4 py-2.5 text-slate-500">{i.findings.length} ข้อ</td>
                     <td className="px-4 py-2.5">
@@ -3238,7 +3264,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
       <div>
         <h1 className="text-lg font-bold text-slate-900">{inspection.inspectionNumber}</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          {formatThaiDate(inspection.inspectionDate)} · {inspection.areaDepartment} · {inspection.topic.join(", ") || "-"}
+          {formatThaiDate(inspection.inspectionDate)} · {safetyInspectionAreaLabel(inspection, locations)} · {inspection.topic.join(", ") || "-"}
         </p>
         <p className="text-xs text-slate-400 mt-1">ผู้ตรวจ: {inspection.inspectorName} · รอบตรวจ: {inspection.inspectionCycle} · จป. ผู้ตรวจสอบ/ปิดเคส: {inspection.approverName}</p>
       </div>
@@ -3900,14 +3926,14 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
     safetyInspections.forEach((insp) => {
       if (insp.findings.length === 0) {
         inspectionRows.push({
-          "เลขที่ตรวจ": insp.inspectionNumber, "วันที่ตรวจ": insp.inspectionDate, "พื้นที่/แผนกที่ตรวจ": insp.areaDepartment,
+          "เลขที่ตรวจ": insp.inspectionNumber, "วันที่ตรวจ": insp.inspectionDate, "พื้นที่/แผนกที่ตรวจ": safetyInspectionAreaLabel(insp, locations),
           "หัวข้อที่ตรวจ": insp.topic.join(", "), "สิ่งที่พบ": "-", "ระดับความเสี่ยง": "", "มาตรการแก้ไข": "",
           "ผู้รับผิดชอบแก้ไข": "", "กำหนดแล้วเสร็จ": "", "สถานะแก้ไข": "", "ผู้ตรวจ": insp.inspectorName,
         });
       } else {
         insp.findings.forEach((f) => {
           inspectionRows.push({
-            "เลขที่ตรวจ": insp.inspectionNumber, "วันที่ตรวจ": insp.inspectionDate, "พื้นที่/แผนกที่ตรวจ": insp.areaDepartment,
+            "เลขที่ตรวจ": insp.inspectionNumber, "วันที่ตรวจ": insp.inspectionDate, "พื้นที่/แผนกที่ตรวจ": safetyInspectionAreaLabel(insp, locations),
             "หัวข้อที่ตรวจ": insp.topic.join(", "), "สิ่งที่พบ": f.finding, "ระดับความเสี่ยง": riskLevelLabel[f.riskLevel] || f.riskLevel,
             "มาตรการแก้ไข": f.correctiveAction !== "-" ? f.correctiveAction : "", "ผู้รับผิดชอบแก้ไข": f.responsiblePerson !== "-" ? f.responsiblePerson : "",
             "กำหนดแล้วเสร็จ": f.dueDate || "", "สถานะแก้ไข": f.status, "ผู้ตรวจ": insp.inspectorName,
@@ -5934,7 +5960,7 @@ function MeasurementRecordCard({ record, showLocationName, locationName, onEdit,
   );
 }
 
-function LocationDetail({ location, incidents, measurements, onBack, onUpdate, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
+function LocationDetail({ location, incidents, measurements, safetyInspections, onBack, onUpdate, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
   const [editingAssessment, setEditingAssessment] = useState(false);
   const [showMeasurementForm, setShowMeasurementForm] = useState(false);
   const [editingMeasurementId, setEditingMeasurementId] = useState(null);
@@ -5969,6 +5995,10 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
   const locationMeasurements = measurements
     .filter((m) => m.locationId === location.id)
     .sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
+
+  const locationInspections = safetyInspections
+    .filter((i) => i.locationId === location.id)
+    .sort((a, b) => (a.inspectionDate < b.inspectionDate ? 1 : -1));
 
   const startEdit = () => {
     setForm({
@@ -6261,6 +6291,50 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
       </div>
 
       <div>
+        <p className="text-sm font-bold text-slate-900 mb-3">
+          ประวัติการตรวจความปลอดภัยในพื้นที่ <span className="text-xs font-normal text-slate-400">(ดึงจาก "บันทึกตรวจความปลอดภัย" อัตโนมัติ)</span>
+        </p>
+        {locationInspections.length === 0 ? (
+          <Card>
+            <p className="text-sm text-slate-400">ยังไม่มีการตรวจความปลอดภัยที่บันทึกไว้ในสถานที่นี้</p>
+          </Card>
+        ) : (
+          <Card className="p-0 overflow-hidden">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-left">
+                  <th className="px-4 py-2.5 font-bold">เลขที่ตรวจ</th>
+                  <th className="px-4 py-2.5 font-bold">วันที่ตรวจ</th>
+                  <th className="px-4 py-2.5 font-bold">หัวข้อที่ตรวจ</th>
+                  <th className="px-4 py-2.5 font-bold">ข้อบกพร่อง</th>
+                  <th className="px-4 py-2.5 font-bold">ยังไม่ปิด</th>
+                </tr>
+              </thead>
+              <tbody>
+                {locationInspections.map((insp) => {
+                  const openCount = insp.findings.filter((f) => f.status !== "ปิดเคสแล้ว").length;
+                  return (
+                    <tr key={insp.id} className="border-t border-slate-100">
+                      <td className="px-4 py-2.5 font-bold text-slate-900">{insp.inspectionNumber}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(insp.inspectionDate)}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{insp.topic.join(", ") || "-"}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{insp.findings.length} ข้อ</td>
+                      <td className="px-4 py-2.5">
+                        {openCount > 0 ? <Badge tone="bg-red-50 text-red-700">{openCount} ข้อ</Badge> : <Badge tone="bg-emerald-50 text-emerald-700">ปิดครบแล้ว</Badge>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+          </Card>
+        )}
+        <p className="text-xs text-slate-400 mt-2">ดูรายละเอียด/แก้ไขแต่ละรายการได้ที่หน้า "บันทึกตรวจความปลอดภัย"</p>
+      </div>
+
+      <div>
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-bold text-slate-900">ผลการตรวจวัดสิ่งแวดล้อม</p>
           <button
@@ -6316,7 +6390,7 @@ function LocationDetail({ location, incidents, measurements, onBack, onUpdate, o
   );
 }
 
-function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, onDelete, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
+function LocationsPage({ locations, incidents, measurements, safetyInspections, onAdd, onUpdate, onDelete, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", building: "", description: "", riskLevel: "low", hazards: [], ppeRequired: [] });
@@ -6328,6 +6402,7 @@ function LocationsPage({ locations, incidents, measurements, onAdd, onUpdate, on
         location={selected}
         incidents={incidents}
         measurements={measurements}
+        safetyInspections={safetyInspections}
         onBack={() => setSelectedId(null)}
         onUpdate={onUpdate}
         onAddMeasurement={onAddMeasurement}
@@ -8524,7 +8599,7 @@ export default function JorPorPrototype() {
     setSafetyInspectionsLoading(true);
     const { data: inspectionRows, error } = await supabase
       .from("safety_inspections")
-      .select("id, inspection_number, inspection_date, area_department, topic, inspector_name, inspection_cycle, approver_name, case_closed_date")
+      .select("id, inspection_number, inspection_date, area_department, location_id, topic, inspector_name, inspection_cycle, approver_name, case_closed_date")
       .order("inspection_date", { ascending: false });
     if (error) {
       console.error("fetchSafetyInspections error:", error);
@@ -8565,7 +8640,8 @@ export default function JorPorPrototype() {
         organization_id: currentUser.organizationId,
         inspection_number: inspectionNumber,
         inspection_date: form.inspectionDate,
-        area_department: form.areaDepartment || null,
+        area_department: form.locationId ? null : (form.areaDepartment || null),
+        location_id: form.locationId || null,
         topic: form.topics && form.topics.length > 0 ? form.topics : null,
         inspector_name: form.inspectorName || null,
         inspection_cycle: form.inspectionCycle || null,
@@ -8606,6 +8682,7 @@ export default function JorPorPrototype() {
   const updateSafetyInspection = async (id, fields) => {
     const payload = {};
     if (fields.areaDepartment !== undefined) payload.area_department = fields.areaDepartment === "-" ? null : fields.areaDepartment;
+    if (fields.locationId !== undefined) payload.location_id = fields.locationId || null;
     if (fields.topic !== undefined) payload.topic = fields.topic && fields.topic.length > 0 ? fields.topic : null;
     if (fields.inspectorName !== undefined) payload.inspector_name = fields.inspectorName === "-" ? null : fields.inspectorName;
     if (fields.inspectionCycle !== undefined) payload.inspection_cycle = fields.inspectionCycle === "-" ? null : fields.inspectionCycle;
@@ -9505,6 +9582,7 @@ export default function JorPorPrototype() {
             onUpdateFinding={updateSafetyInspectionFinding}
             onDeleteFinding={deleteSafetyInspectionFinding}
             organizationId={currentUser.organizationId}
+            locations={locations}
           />
         )}
         {page === "govReports" && (
@@ -9550,6 +9628,7 @@ export default function JorPorPrototype() {
             locations={locations}
             incidents={incidents}
             measurements={environmentalMeasurements}
+            safetyInspections={safetyInspections}
             onAdd={addLocation}
             onUpdate={updateLocation}
             onDelete={deleteLocation}
