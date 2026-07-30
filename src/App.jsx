@@ -855,21 +855,57 @@ const initialEquipment = [
   },
 ];
 
-const checklistItems = [
-  { id: 1, text: "สวมใส่สายรัดนิรภัยครบถ้วน" },
-  { id: 2, text: "ตรวจสอบจุดยึดเกี่ยวมั่นคง" },
-  { id: 3, text: "บันไดอยู่ในสภาพใช้งานได้" },
-  { id: 4, text: "มีป้ายเตือนพื้นที่ทำงานชัดเจน" },
-];
+// ---------------------------------------------------------------
+// แบบตรวจสภาพหน้างานก่อนเริ่มงานเสี่ยงสูง — ใช้ครั้งเดียว กรอกแล้วพิมพ์เลย ไม่เก็บลงฐานข้อมูล
+// รายการตรวจสอบตามแบบฟอร์มต้นฉบับเป๊ะ แยกตามประเภทงาน 4 แบบ
+// ---------------------------------------------------------------
+const highRiskWorkTypes = ["งานที่อับอากาศ", "งานเชื่อม/งานก่อประกายไฟ", "งานบนที่สูง", "งานปั้นจั่น/เครน/การยกของ"];
 
-const workTypes = [
-  "งานที่สูง",
-  "งานในที่อับอากาศ",
-  "งานเชื่อม/ตัด (Hot Work)",
-  "งานไฟฟ้า",
-  "งานขุดเจาะ",
-  "งานยกของด้วยเครื่องจักร/เครน",
-];
+const highRiskChecklists = {
+  "งานที่อับอากาศ": [
+    "ตรวจวัดปริมาณออกซิเจนในบรรยากาศ (19.5–23.5%) ก่อนเข้าพื้นที่",
+    "ตรวจวัดก๊าซไวไฟ/ก๊าซพิษ (เช่น H2S, CO) อยู่ในเกณฑ์ปลอดภัย",
+    "มีการระบายอากาศ (Ventilation) เพียงพอตลอดการทำงาน",
+    "ตัดแยกพลังงาน/สารที่อาจไหลเข้าพื้นที่ (Isolation / LOTO) แล้ว",
+    "มีผู้เฝ้าระวังประจำปากทางเข้า-ออกตลอดเวลาที่มีคนอยู่ข้างใน",
+    "มีอุปกรณ์สื่อสารระหว่างผู้ปฏิบัติงานและผู้เฝ้าระวัง",
+    "มีอุปกรณ์ช่วยชีวิต/ดึงตัวออกฉุกเฉิน (Retrieval System) พร้อมใช้งาน",
+    "ผู้ปฏิบัติงานผ่านการอบรมงานที่อับอากาศ และมีใบอนุญาตที่ยังไม่หมดอายุ",
+    "มีแผนฉุกเฉินและช่องทางแจ้งเหตุกรณีเกิดอุบัติเหตุ",
+    "ทางเข้า-ออกไม่มีสิ่งกีดขวาง สามารถช่วยเหลือได้ทันที",
+  ],
+  "งานเชื่อม/งานก่อประกายไฟ": [
+    "เคลื่อนย้ายวัสดุไวไฟ/สารเคมีออกจากรัศมีที่กำหนด (อย่างน้อย 10 เมตร)",
+    "ตรวจสอบว่าไม่มีไอสารไวไฟสะสมในพื้นที่ทำงานและพื้นที่ใกล้เคียง",
+    "ปิดคลุม/ป้องกันจุดระบายน้ำ ท่อ หรือช่องที่ประกายไฟอาจตกลงไปได้",
+    "เตรียมถังดับเพลิงชนิดที่เหมาะสมประจำจุดทำงาน",
+    "ตรวจสอบอุปกรณ์เชื่อม/ตัดอยู่ในสภาพดี ไม่มีการรั่วไหลของแก๊ส",
+    "ผู้ปฏิบัติงานสวมอุปกรณ์ป้องกันใบหน้า/ตา และถุงมือทนความร้อน",
+    "จัดให้มีผู้เฝ้าระวังไฟ (Fire Watch) ระหว่างทำงานและหลังเลิกงานอย่างน้อย 30 นาที",
+    "ได้รับอนุญาต Hot Work Permit จากผู้มีอำนาจก่อนเริ่มงาน",
+    "ตรวจสอบสภาพอากาศ/การระบายอากาศบริเวณจุดปฏิบัติงาน",
+  ],
+  "งานบนที่สูง": [
+    "ตรวจสอบสภาพนั่งร้าน/บันได/แพลตฟอร์มมั่นคงแข็งแรง ไม่มีจุดชำรุด",
+    "ตรวจสอบเข็มขัดนิรภัย (Safety Harness) และสายรัดอยู่ในสภาพใช้งานได้",
+    "จุดยึดเกาะสายรัดนิรภัย (Anchor Point) มั่นคง รับน้ำหนักได้ตามมาตรฐาน",
+    "กั้นเขต/ติดป้ายเตือนพื้นที่ด้านล่างจุดทำงานบนที่สูง",
+    "ตรวจสอบสภาพอากาศ (ลมแรง ฝนตก ฟ้าคะนอง) เหมาะสมต่อการทำงาน",
+    "เครื่องมือ/อุปกรณ์มีสายรัดกันตก ป้องกันของตกใส่คนด้านล่าง",
+    "ผู้ปฏิบัติงานผ่านการอบรมงานที่สูง และมีสภาพร่างกายพร้อมทำงาน",
+    "มีแผนช่วยเหลือกรณีตกค้าง (Rescue Plan) พร้อมอุปกรณ์ช่วยเหลือ",
+  ],
+  "งานปั้นจั่น/เครน/การยกของ": [
+    "ตรวจสอบสภาพลวดสลิง/โซ่ยก ไม่มีการชำรุด บิดงอ หรือสึกหรอ",
+    "ตรวจสอบใบรับรองการตรวจสอบปั้นจั่น/เครนยังไม่หมดอายุ",
+    "ผู้บังคับปั้นจั่นและผู้ให้สัญญาณผ่านการอบรมและมีใบอนุญาตที่ยังไม่หมดอายุ",
+    "กำหนดเขตพื้นที่ห้ามเข้าใต้แนวยกของ พร้อมป้ายเตือน",
+    "ตรวจสอบน้ำหนักของที่จะยกไม่เกินพิกัดยกที่ปลอดภัย (Safe Working Load)",
+    "พื้นที่ตั้งปั้นจั่นมั่นคง ไม่มีความเสี่ยงทรุดตัวหรือเอียง",
+    "ผู้ให้สัญญาณอยู่ในตำแหน่งที่มองเห็นชัดเจนตลอดการยก",
+    "ตรวจสอบสภาพอากาศ (ลมแรง) เหมาะสมต่อการยกของ",
+  ],
+};
 
 const equipmentTypeOptions = ["SCBA", "เครื่องวัดแก๊ส", "ถังดับเพลิง", "ฝักบัวฉุกเฉิน", "ตู้สายฉีดน้ำดับเพลิง", "ชุดอุปกรณ์ที่อับอากาศ", "อื่นๆ"];
 const frequencyOptions = ["ทุกวัน (bump test)", "ทุกสัปดาห์", "ทุก 1 เดือน", "ทุก 3 เดือน", "ทุก 6 เดือน", "ทุกปี"];
@@ -4026,261 +4062,230 @@ function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteIns
 
 
 function ChecklistPage() {
+  const emptyResults = () => ({});
+  const [workType, setWorkType] = useState(highRiskWorkTypes[0]);
   const [header, setHeader] = useState({
-    projectName: "", location: "", workType: workTypes[0],
-    scheduledDate: "", scheduledStart: "", scheduledEnd: "",
+    date: todayIso(), time: "", location: "", worker: "", supervisor: "", workPermitNo: "", allowedDuration: "",
   });
-  const [headerLocked, setHeaderLocked] = useState(false);
-  const [answers, setAnswers] = useState({});
-  const [notes, setNotes] = useState("");
-  const [correctiveDeadline, setCorrectiveDeadline] = useState("");
-  const [submissions, setSubmissions] = useState([]); // ประวัติแต่ละรอบตรวจของงานนี้
-  const [approved, setApproved] = useState(false);
+  const [results, setResults] = useState(emptyResults());
+  const [hazards, setHazards] = useState([{ hazard: "", control: "" }, { hazard: "", control: "" }, { hazard: "", control: "" }]);
+  const [readiness, setReadiness] = useState("ready"); // "ready" | "not_ready"
+  const [notReadyReason, setNotReadyReason] = useState("");
+  const [signatures, setSignatures] = useState({ worker: "", supervisor: "", approver: "" });
 
-  const passCount = Object.values(answers).filter((v) => v === "pass").length;
-  const failCount = Object.values(answers).filter((v) => v === "fail").length;
-  const answeredCount = passCount + failCount;
-  const allAnswered = answeredCount === checklistItems.length;
-  const needsDeadline = failCount > 0;
-  const canSubmit = allAnswered && (!needsDeadline || correctiveDeadline.trim() !== "");
+  const items = highRiskChecklists[workType];
 
-  const lastSubmission = submissions[0];
-  const awaitingReinspection = lastSubmission && lastSubmission.result === "fail";
-  const readyToApprove = lastSubmission && lastSubmission.result === "pass" && !approved;
-  const inspectionInProgress = !lastSubmission || awaitingReinspection;
-
-  const submit = () => {
-    if (!canSubmit) return;
-    const record = {
-      id: Date.now(),
-      date: "วันนี้",
-      inspector: "ผู้ใช้งานปัจจุบัน",
-      result: needsDeadline ? "fail" : "pass",
-      passCount, failCount,
-      notes: notes || "-",
-      correctiveDeadline: needsDeadline ? correctiveDeadline : null,
-      isFollowUp: submissions.length > 0,
-    };
-    setSubmissions([record, ...submissions]);
-    setHeaderLocked(true);
-    setAnswers({});
-    setNotes("");
-    setCorrectiveDeadline("");
+  const changeWorkType = (wt) => {
+    setWorkType(wt);
+    setResults(emptyResults()); // เปลี่ยนประเภทงาน = รายการตรวจสอบเปลี่ยนไปทั้งหมด ต้องเริ่มกาใหม่
   };
 
-  const approve = () => setApproved(true);
+  const setResult = (idx, value) => setResults({ ...results, [idx]: value });
+
+  const updateHazardRow = (idx, field, value) => {
+    setHazards(hazards.map((h, i) => (i === idx ? { ...h, [field]: value } : h)));
+  };
+  const addHazardRow = () => setHazards([...hazards, { hazard: "", control: "" }]);
+  const removeHazardRow = (idx) => setHazards(hazards.filter((_, i) => i !== idx));
 
   const resetAll = () => {
-    setHeader({ projectName: "", location: "", workType: workTypes[0], scheduledDate: "", scheduledStart: "", scheduledEnd: "" });
-    setHeaderLocked(false);
-    setAnswers({});
-    setNotes("");
-    setCorrectiveDeadline("");
-    setSubmissions([]);
-    setApproved(false);
+    setHeader({ date: todayIso(), time: "", location: "", worker: "", supervisor: "", workPermitNo: "", allowedDuration: "" });
+    setResults(emptyResults());
+    setHazards([{ hazard: "", control: "" }, { hazard: "", control: "" }, { hazard: "", control: "" }]);
+    setReadiness("ready");
+    setNotReadyReason("");
+    setSignatures({ worker: "", supervisor: "", approver: "" });
   };
 
-  return (
-    <div className="space-y-5">
-      <h1 className="text-lg font-bold text-slate-900">แบบตรวจสภาพหน้างานก่อนเริ่มงานเสี่ยงสูง</h1>
+  const resultLabel = { pass: "ผ่าน", fail: "ไม่ผ่าน", na: "N/A" };
 
-      <Card className="max-w-xl">
-        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+  return (
+    <div className="space-y-5 print:space-y-3">
+      <div className="print:hidden">
+        <h1 className="text-lg font-bold text-slate-900">แบบตรวจสภาพหน้างานก่อนเริ่มงานเสี่ยงสูง</h1>
+        <p className="text-xs text-slate-400 mt-1">
+          Pre-Work Safety Inspection Checklist — แบบฟอร์มนี้ใช้ครั้งเดียว กรอกแล้วพิมพ์เก็บไว้เป็นหลักฐาน
+          ไม่ได้บันทึกเก็บไว้ในระบบ ถ้าปิดหน้านี้ก่อนพิมพ์ข้อมูลจะหายไป
+        </p>
+      </div>
+
+      {/* หัวกระดาษสำหรับพิมพ์เท่านั้น */}
+      <div className="hidden print:block text-center mb-2">
+        <p className="font-bold text-base">แบบตรวจสภาพหน้างานก่อนเริ่มงานเสี่ยงสูง</p>
+        <p className="text-sm text-slate-500">Pre-Work Safety Inspection Checklist — {workType}</p>
+      </div>
+
+      <div className="print:hidden">
+        <label className="text-xs font-bold text-slate-500 block mb-1">เลือกประเภทงานเสี่ยงสูง</label>
+        <select
+          value={workType}
+          onChange={(e) => changeWorkType(e.target.value)}
+          className="w-full sm:w-80 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+        >
+          {highRiskWorkTypes.map((wt) => <option key={wt}>{wt}</option>)}
+        </select>
+      </div>
+
+      <Card>
+        <p className="text-sm font-bold text-slate-900 mb-3">1. ข้อมูลงาน</p>
+        <div className="grid sm:grid-cols-2 gap-3 mb-3">
           <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อโครงการ / งาน</label>
-            <input
-              value={header.projectName}
-              disabled={headerLocked}
-              onChange={(e) => setHeader({ ...header, projectName: e.target.value })}
-              placeholder="เช่น ซ่อมบำรุงหลังคาโกดัง B"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
-            />
+            <label className="text-xs font-bold text-slate-500 block mb-1">วันที่</label>
+            <input type="date" value={header.date} onChange={(e) => setHeader({ ...header, date: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">ตำแหน่งสถานที่</label>
-            <input
-              value={header.location}
-              disabled={headerLocked}
-              onChange={(e) => setHeader({ ...header, location: e.target.value })}
-              placeholder="เช่น หลังคาโกดัง B ชั้น 3"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">ประเภทงานเสี่ยงสูง</label>
-            <select
-              value={header.workType}
-              disabled={headerLocked}
-              onChange={(e) => setHeader({ ...header, workType: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
-            >
-              {workTypes.map((w) => <option key={w}>{w}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">วันที่จะเข้าทำงาน</label>
-            <input
-              type="date"
-              value={header.scheduledDate}
-              disabled={headerLocked}
-              onChange={(e) => setHeader({ ...header, scheduledDate: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">เวลาเริ่มงาน</label>
-            <input
-              type="time"
-              value={header.scheduledStart}
-              disabled={headerLocked}
-              onChange={(e) => setHeader({ ...header, scheduledStart: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">เวลาสิ้นสุดงาน (โดยประมาณ)</label>
-            <input
-              type="time"
-              value={header.scheduledEnd}
-              disabled={headerLocked}
-              onChange={(e) => setHeader({ ...header, scheduledEnd: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
-            />
+            <label className="text-xs font-bold text-slate-500 block mb-1">เวลา</label>
+            <input type="time" value={header.time} onChange={(e) => setHeader({ ...header, time: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
           </div>
         </div>
+        <div className="mb-3">
+          <label className="text-xs font-bold text-slate-500 block mb-1">สถานที่ปฏิบัติงาน</label>
+          <input value={header.location} onChange={(e) => setHeader({ ...header, location: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ผู้ปฏิบัติงาน</label>
+            <input value={header.worker} onChange={(e) => setHeader({ ...header, worker: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ผู้ควบคุมงาน</label>
+            <input value={header.supervisor} onChange={(e) => setHeader({ ...header, supervisor: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">เลขที่ Work Permit (ถ้ามี)</label>
+            <input value={header.workPermitNo} onChange={(e) => setHeader({ ...header, workPermitNo: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ระยะเวลาที่อนุญาตทำงาน</label>
+            <input value={header.allowedDuration} onChange={(e) => setHeader({ ...header, allowedDuration: e.target.value })} placeholder="เช่น 08:00-17:00" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+      </Card>
 
-        {submissions.length > 0 && (
-          <div className="mb-4 space-y-2">
-            <p className="text-xs font-medium text-slate-500">ประวัติการตรวจของงานนี้</p>
-            {submissions.map((s) => (
-              <div key={s.id} className="flex items-center justify-between text-sm border-b border-slate-100 pb-2">
-                <span className="text-slate-700">
-                  {s.date}
-                  {s.isFollowUp && <span className="ml-2 text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">ตรวจซ้ำ</span>}
-                </span>
-                <Badge tone={s.result === "fail" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}>
-                  {s.result === "fail" ? "ไม่ผ่าน" : "ผ่าน"}
-                </Badge>
+      <Card>
+        <p className="text-sm font-bold text-slate-900 mb-3">2. รายการตรวจสอบสภาพหน้างานเฉพาะประเภทงาน</p>
+        <div className="space-y-3">
+          {items.map((text, idx) => (
+            <div key={idx} className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+              <p className="text-sm text-slate-700 flex-1">{text}</p>
+              <div className="flex gap-1.5 shrink-0 print:hidden">
+                {["pass", "fail", "na"].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setResult(idx, v)}
+                    className={`text-xs px-2.5 py-1 rounded-lg border ${
+                      results[idx] === v
+                        ? v === "fail" ? "bg-red-50 text-red-700 border-red-200" : v === "na" ? "bg-slate-100 text-slate-600 border-slate-300" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "border-slate-300 text-slate-500"
+                    }`}
+                  >
+                    {resultLabel[v]}
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-
-        {awaitingReinspection && (
-          <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4">
-            <AlertTriangle size={18} className="text-red-600 mt-0.5 shrink-0" />
-            <p className="text-sm text-red-700">
-              ต้องแก้ไขและตรวจซ้ำภายในวันที่ <span className="font-medium">{lastSubmission.correctiveDeadline}</span>
-              {" "}ก่อนจึงจะอนุมัติและออกเอกสารประกอบใบอนุญาตเข้าทำงานได้
-            </p>
-          </div>
-        )}
-
-        {inspectionInProgress && (
-          <>
-            <p className="text-xs font-medium text-slate-500 mb-2">
-              {awaitingReinspection ? "ตรวจซ้ำ — รายการตรวจสภาพ" : "รายการตรวจสภาพ"}
-            </p>
-            <div className="space-y-3 mb-4">
-              {checklistItems.map((item) => (
-                <div key={item.id} className="flex items-center justify-between">
-                  <span className="text-sm text-slate-700">{item.id}. {item.text}</span>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => setAnswers({ ...answers, [item.id]: "pass" })}
-                      className={`text-xs px-3 py-1 rounded-lg border ${
-                        answers[item.id] === "pass" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "border-slate-300 text-slate-500"
-                      }`}
-                    >
-                      ผ่าน
-                    </button>
-                    <button
-                      onClick={() => setAnswers({ ...answers, [item.id]: "fail" })}
-                      className={`text-xs px-3 py-1 rounded-lg border ${
-                        answers[item.id] === "fail" ? "bg-red-50 text-red-700 border-red-200" : "border-slate-300 text-slate-500"
-                      }`}
-                    >
-                      ไม่ผ่าน
-                    </button>
-                  </div>
-                </div>
-              ))}
+              <p className="hidden print:block text-xs font-bold shrink-0 w-14 text-right">{results[idx] ? resultLabel[results[idx]] : "-"}</p>
             </div>
+          ))}
+        </div>
+      </Card>
 
-            <label className="text-xs font-bold text-slate-500 block mb-1">หมายเหตุ / ข้อบกพร่องที่พบ</label>
+      <Card>
+        <div className="flex items-center justify-between mb-3 print:hidden">
+          <p className="text-sm font-bold text-slate-900">3. อันตรายเพิ่มเติมเฉพาะจุด และมาตรการควบคุม</p>
+          <button onClick={addHazardRow} className="text-xs text-slate-500 underline hover:text-slate-700">+ เพิ่มแถว</button>
+        </div>
+        <p className="hidden print:block text-sm font-bold text-slate-900 mb-3">3. อันตรายเพิ่มเติมเฉพาะจุด และมาตรการควบคุม</p>
+        <div className="space-y-2">
+          {hazards.map((row, idx) => (
+            <div key={idx} className="grid sm:grid-cols-2 gap-2 items-start">
+              <textarea
+                rows={2}
+                value={row.hazard}
+                onChange={(e) => updateHazardRow(idx, "hazard", e.target.value)}
+                placeholder="อันตรายที่คาดว่าจะเกิดขึ้น"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
+              />
+              <div className="flex gap-2">
+                <textarea
+                  rows={2}
+                  value={row.control}
+                  onChange={(e) => updateHazardRow(idx, "control", e.target.value)}
+                  placeholder="มาตรการควบคุม/ป้องกัน"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none"
+                />
+                {hazards.length > 1 && (
+                  <button onClick={() => removeHazardRow(idx)} className="text-xs text-slate-400 underline hover:text-red-600 shrink-0 print:hidden">ลบ</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <p className="text-sm font-bold text-slate-900 mb-3">ผลการตรวจสอบก่อนเริ่มงาน</p>
+        <div className="flex gap-2 mb-3 print:hidden">
+          <button
+            onClick={() => setReadiness("ready")}
+            className={`text-sm px-3 py-1.5 rounded-lg border ${readiness === "ready" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "border-slate-300 text-slate-500"}`}
+          >
+            พร้อมเริ่มงาน
+          </button>
+          <button
+            onClick={() => setReadiness("not_ready")}
+            className={`text-sm px-3 py-1.5 rounded-lg border ${readiness === "not_ready" ? "bg-red-50 text-red-700 border-red-200" : "border-slate-300 text-slate-500"}`}
+          >
+            ยังไม่พร้อม
+          </button>
+        </div>
+        <p className="hidden print:block text-sm font-bold mb-2">
+          {readiness === "ready" ? "☑ พร้อมเริ่มงาน  ☐ ยังไม่พร้อม" : "☐ พร้อมเริ่มงาน  ☑ ยังไม่พร้อม"}
+        </p>
+        {readiness === "not_ready" && (
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1 print:hidden">ระบุเหตุผล</label>
             <textarea
               rows={2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="เช่น บันไดขั้นที่ 3 หลวม ต้องซ่อมก่อนใช้งาน"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none mb-3"
+              value={notReadyReason}
+              onChange={(e) => setNotReadyReason(e.target.value)}
+              placeholder="ระบุเหตุผลที่ยังไม่พร้อมเริ่มงาน"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none print:border-0 print:border-b print:rounded-none print:px-0"
             />
-
-            <div className="border border-dashed border-slate-300 rounded-lg py-4 text-center text-slate-400 text-sm mb-4">
-              <Camera size={20} className="mx-auto mb-1.5" />
-              แตะเพื่อถ่ายรูปหรือแนบไฟล์
-            </div>
-
-            {needsDeadline && (
-              <div className="mb-4">
-                <label className="text-xs font-bold text-slate-500 block mb-1">
-                  กำหนดแก้ไขให้เสร็จภายในวันที่ <span className="text-red-600">(บังคับกรอกเมื่อมีข้อไม่ผ่าน)</span>
-                </label>
-                <input
-                  type="date"
-                  value={correctiveDeadline}
-                  onChange={(e) => setCorrectiveDeadline(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <span className="text-xs text-slate-500">ผ่าน {passCount} · ไม่ผ่าน {failCount} · รอตรวจ {checklistItems.length - answeredCount}</span>
-              <button
-                onClick={submit}
-                disabled={!canSubmit}
-                className={`text-sm px-3 py-2 rounded-lg text-white ${canSubmit ? "bg-slate-900" : "bg-slate-300 cursor-not-allowed"}`}
-              >
-                ส่งผลตรวจสอบ
-              </button>
-            </div>
-          </>
-        )}
-
-        {readyToApprove && (
-          <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
-            <p className="text-sm text-emerald-700">ผ่านครบทุกข้อแล้ว พร้อมอนุมัติ</p>
-            <button onClick={approve} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-              อนุมัติผลตรวจสอบ
-            </button>
-          </div>
-        )}
-
-        {approved && (
-          <div className="space-y-3">
-            <div className="bg-slate-50 rounded-lg p-4 border border-slate-100 text-sm text-slate-700 space-y-1">
-              <p className="font-bold text-slate-900 mb-1">สรุปสำหรับพิมพ์ประกอบใบอนุญาตเข้าทำงาน</p>
-              <p>โครงการ: {header.projectName || "-"}</p>
-              <p>สถานที่: {header.location || "-"}</p>
-              <p>ประเภทงาน: {header.workType}</p>
-              <p>กำหนดเข้าทำงาน: {header.scheduledDate || "-"} เวลา {header.scheduledStart || "-"} - {header.scheduledEnd || "-"}</p>
-              <p>ผลตรวจสภาพ: ผ่านครบทุกข้อ · อนุมัติโดยผู้ใช้งานปัจจุบัน · วันนี้</p>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={resetAll} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
-                ตรวจสอบงานใหม่
-              </button>
-              <button onClick={() => window.print()} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-                พิมพ์รายงาน
-              </button>
-            </div>
           </div>
         )}
       </Card>
+
+      <Card>
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ผู้ปฏิบัติงาน (ลงชื่อ)</label>
+            <input value={signatures.worker} onChange={(e) => setSignatures({ ...signatures, worker: e.target.value })} placeholder="ชื่อ-นามสกุล" className="w-full border-b border-slate-300 px-1 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">หัวหน้างาน/ผู้ควบคุมงาน (ลงชื่อ)</label>
+            <input value={signatures.supervisor} onChange={(e) => setSignatures({ ...signatures, supervisor: e.target.value })} placeholder="ชื่อ-นามสกุล" className="w-full border-b border-slate-300 px-1 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">จป. ผู้ตรวจสอบ/อนุมัติ (ลงชื่อ)</label>
+            <input value={signatures.approver} onChange={(e) => setSignatures({ ...signatures, approver: e.target.value })} placeholder="ชื่อ-นามสกุล" className="w-full border-b border-slate-300 px-1 py-2 text-sm" />
+          </div>
+        </div>
+      </Card>
+
+      <div className="flex justify-end gap-2 print:hidden">
+        <button onClick={resetAll} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
+          ล้างข้อมูลทั้งหมด
+        </button>
+        <button onClick={() => window.print()} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
+          Export เป็น PDF / พิมพ์
+        </button>
+      </div>
     </div>
   );
 }
+
 
 // ---------------------------------------------------------------
 // Employees registry
@@ -8461,7 +8466,7 @@ export default function JorPorPrototype() {
   return (
     <div className="min-h-[600px] bg-white font-sans sm:flex sm:items-start">
       {/* แถบบนสุดสำหรับมือถือ — มีปุ่มเปิดเมนู */}
-      <div className="sm:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200">
+      <div className="sm:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200 print:hidden">
         <p className="font-semibold text-slate-900 text-[15px]">JorPor</p>
         <button
           onClick={() => setMobileMenuOpen(true)}
@@ -8482,7 +8487,7 @@ export default function JorPorPrototype() {
 
       {/* เมนูมือถือ: fixed drawer เลื่อนเข้า-ออก แสดงเฉพาะจอเล็กกว่า sm */}
       <div
-        className={`sm:hidden fixed inset-y-0 left-0 z-40 w-56 bg-white border-r border-slate-200 p-3
+        className={`sm:hidden fixed inset-y-0 left-0 z-40 w-56 bg-white border-r border-slate-200 p-3 print:hidden
           transform transition-transform duration-200
           ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
@@ -8498,7 +8503,7 @@ export default function JorPorPrototype() {
       </div>
 
       {/* เมนู desktop: แสดงตลอดเวลา อยู่ในโครง grid ปกติ ไม่ใช้ fixed/translate เลย */}
-      <div className="hidden sm:flex sm:flex-col sm:w-[224px] sm:shrink-0 sm:h-screen sm:sticky sm:top-0 sm:overflow-y-auto border-r border-slate-200 p-3 bg-white">
+      <div className="hidden sm:flex sm:flex-col sm:w-[224px] sm:shrink-0 sm:h-screen sm:sticky sm:top-0 sm:overflow-y-auto border-r border-slate-200 p-3 bg-white print:hidden">
         <SidebarNav
           page={page}
           selectPage={selectPage}
