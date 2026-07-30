@@ -1265,7 +1265,6 @@ function Dashboard({
   const ppeSoon = ppe.filter((p) => daysUntil(p.expiry) <= 30).length;
   const incidents30d = incidents.filter((i) => daysBetween(i.incidentDate) <= 30).length;
   const noncompliance30d = noncompliance.filter((r) => daysBetween(r.date) <= 30).length;
-  const highRiskLocations = locations.filter((l) => l.riskLevel === "high" || l.riskLevel === "critical");
   const envFailingMeasurements = [...environmentalMeasurements]
     .filter((m) => m.result === "fail")
     .sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
@@ -1387,22 +1386,6 @@ function Dashboard({
             {equipment.filter((e) => e.status !== "ปกติ").length === 0 && (
               <p className="text-sm text-slate-400">อุปกรณ์ทุกชิ้นอยู่ในสภาพปกติ</p>
             )}
-          </div>
-        </Card>
-
-        <Card>
-          <p className="text-sm font-bold text-slate-900 mb-3">สถานที่ที่ต้องเฝ้าระวัง</p>
-          <div className="space-y-3">
-            {highRiskLocations.map((l) => (
-              <div key={l.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                <div>
-                  <p className="text-sm text-slate-800">{l.name}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{l.building}</p>
-                </div>
-                <Badge tone={riskLevelTone(l.riskLevel)}>{riskLevelLabel[l.riskLevel]}</Badge>
-              </div>
-            ))}
-            {highRiskLocations.length === 0 && <p className="text-sm text-slate-400">ไม่มีสถานที่ความเสี่ยงสูง/วิกฤตในขณะนี้</p>}
           </div>
         </Card>
 
