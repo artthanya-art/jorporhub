@@ -3,7 +3,7 @@ import { supabase } from "./lib/supabaseClient";
 import {
   LayoutDashboard, AlertTriangle, HardHat, Wrench, ClipboardCheck,
   Plus, X, Camera, ArrowLeft, ChevronRight, Menu, Users, MapPin, ShieldAlert,
-  Wind, GraduationCap, LogOut, FlaskConical, FileText,
+  Wind, GraduationCap, LogOut, FlaskConical, FileText, Settings,
 } from "lucide-react";
 
 // ---------------------------------------------------------------
@@ -142,6 +142,7 @@ const PAGE_OPTIONS = [
   { key: "locations", label: "สถานที่ทำงาน" },
   { key: "ppe", label: "PPE" },
   { key: "equipment", label: "อุปกรณ์ความปลอดภัย" },
+  { key: "machinery", label: "เครื่องจักร" },
   { key: "chemicals", label: "ทะเบียนสารเคมี" },
   { key: "govReports", label: "รายงานราชการ" },
 ];
@@ -388,6 +389,52 @@ function mapInspectionRow(row, inspectorNameById) {
   };
 }
 
+// ---------------------------------------------------------------
+// เครื่องจักร (machinery) <-> Supabase mapping — แยกจากอุปกรณ์ความปลอดภัย เพราะกลุ่มนี้
+// กฎหมายบังคับให้วิศวกรที่ขึ้นทะเบียนเป็นผู้ตรวจ/รับรอง ไม่ใช่ จป. ตรวจเอง
+// ---------------------------------------------------------------
+const machineryCategoryUiToDb = {
+  "ปั้นจั่น/เครน": "crane", "หม้อไอน้ำ": "boiler", "ถังรับความดัน": "pressure_vessel",
+  "ลิฟต์": "elevator", "รถยก": "forklift", "อื่นๆ": "other",
+};
+const machineryCategoryDbToUi = Object.fromEntries(Object.entries(machineryCategoryUiToDb).map(([k, v]) => [v, k]));
+const machineryCategoryOptions = Object.keys(machineryCategoryUiToDb);
+
+const machineryStatusDbToUi = {
+  normal: "ปกติ", due_soon: "ใกล้ครบกำหนด", overdue: "เกินกำหนด", pending_reinspection: "รอตรวจซ้ำ",
+  out_of_service: "เลิกใช้งานชั่วคราว", retired: "ปลดระวาง",
+};
+
+const machineryResultUiToDb = { "ผ่าน": "pass", "ผ่านแบบมีข้อสังเกต": "pass_with_notes", "ไม่ผ่าน": "fail" };
+const machineryResultDbToUi = Object.fromEntries(Object.entries(machineryResultUiToDb).map(([k, v]) => [v, k]));
+
+function mapMachineryRow(row) {
+  return {
+    id: row.id,
+    code: row.asset_code,
+    name: machineryCategoryDbToUi[row.category] || row.category,
+    location: row.location || "-",
+    frequencyMonths: row.inspection_frequency_months,
+    lastDate: row.last_inspection_date ? row.last_inspection_date.slice(0, 10) : "-",
+    nextDate: row.next_inspection_due ? row.next_inspection_due.slice(0, 10) : "-",
+    status: machineryStatusDbToUi[row.status] || row.status,
+    history: [],
+  };
+}
+
+function mapMachineryInspectionRow(row) {
+  return {
+    rowId: row.id,
+    date: row.inspected_at ? row.inspected_at.slice(0, 10) : "",
+    engineerName: row.engineer_name || "-",
+    engineerLicenseNumber: row.engineer_license_number || "-",
+    certificateNumber: row.certificate_number || "-",
+    result: machineryResultDbToUi[row.result] || row.result,
+    findings: row.findings || "-",
+    correctiveDeadline: row.corrective_deadline,
+  };
+}
+
 // ประเภท/รุ่นอุปกรณ์ PPE (ppe_catalog) — standard_ref/lifespan_days → camelCase
 // หมายเหตุ: ตาราง ppe_catalog ในสคีมาเดิมไม่มีคอลัมน์ "model" (มีแค่ category ซึ่งคนละความหมาย)
 // ต้องรัน ALTER TABLE ppe_catalog ADD COLUMN model VARCHAR(255); เพิ่มก่อนใช้งานส่วนนี้
@@ -433,6 +480,8 @@ function mapTrainingRecordRow(row) {
     courseId: row.course_id,
     completionDate: row.completion_date,
     expiryDate: row.expiry_date,
+    certificateNumber: row.certificate_number || "",
+    trainingProvider: row.training_provider || "",
   };
 }
 
@@ -458,7 +507,7 @@ async function fetchUserProfile(authUserId) {
 // ที่หน้า "จัดการประเภทผู้ใช้งาน" เท่านั้น ผู้ใช้ที่มีประเภทเดียวกันจะเห็นเมนูเหมือนกันทั้งหมด
 const initialTierPermissions = {
   free: ["dashboard", "incidents", "employees", "checklist"],
-  silver: ["dashboard", "incidents", "ppe", "equipment", "employees", "locations", "checklist", "chemicals", "govReports"],
+  silver: ["dashboard", "incidents", "ppe", "equipment", "machinery", "employees", "locations", "checklist", "chemicals", "govReports"],
   gold: [...ALL_PAGE_KEYS],
 };
 
@@ -731,6 +780,12 @@ function daysUntil(iso) {
 function addDaysIso(iso, days) {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function addMonthsIso(iso, months) {
+  const d = new Date(iso + "T00:00:00");
+  d.setMonth(d.getMonth() + months);
   return d.toISOString().slice(0, 10);
 }
 
@@ -2843,7 +2898,7 @@ function monthDateOptions(count) {
   return out;
 }
 
-function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsertWorkingHours, onDeleteWorkingHours, incidents, employees }) {
+function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsertWorkingHours, onDeleteWorkingHours, incidents, employees, chemicals, equipment, machinery, environmentalMeasurements, trainingRecords, trainingCourses, locations }) {
   const [editingOrg, setEditingOrg] = useState(false);
   const [orgForm, setOrgForm] = useState(orgProfile);
   const monthOptions = monthDateOptions(18); // ย้อนหลังได้ถึง 18 เดือน
@@ -2927,6 +2982,219 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "สถิติอุบัติเหตุรายไตรมาส");
     XLSX.writeFile(workbook, `สถิติอุบัติเหตุ_Q${q.quarterNum}_${q.year + 543}.xlsx`);
+  };
+
+  // รวมทุก sheet ที่มีข้อมูลจริงพร้อมอยู่แล้วไว้ในไฟล์เดียว — sheet ที่ระบบยังไม่มีฟีเจอร์รองรับ
+  // (ตรวจความปลอดภัย, ใบอนุญาตทำงานเสี่ยง, กท.16 รายกรณี) จะไม่ถูกสร้างในไฟล์นี้ เพราะยังไม่มี
+  // ข้อมูลจริงให้ใส่ — ใส่แค่ sheet เปล่าพร้อมหัวคอลัมน์ไว้แทน กันสับสนว่าไฟล์หายไปไหน
+  const employeeName = (id) => employees.find((e) => e.id === id)?.name ?? "-";
+  const employeePosition = (id) => employees.find((e) => e.id === id)?.position ?? "-";
+  const locationName = (id) => locations.find((l) => l.id === id)?.name ?? "-";
+  const courseName = (id) => trainingCourses.find((c) => c.id === id)?.name ?? "-";
+  const courseCategory = (id) => trainingCourses.find((c) => c.id === id)?.category ?? "-";
+
+  const exportFullReport = async () => {
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.utils.book_new();
+
+    // --- ข้อมูลองค์กร-คปอ. ---
+    const orgRows = [
+      ["ชื่อสถานประกอบการ", orgProfile.name || ""],
+      ["เลขทะเบียนนิติบุคคล", orgProfile.taxId || ""],
+      ["ประเภทกิจการ (บัญชี 1/2/3)", accountTierDbToUi[orgProfile.accountTier] || ""],
+      ["ที่อยู่สถานประกอบการ", orgProfile.address || ""],
+      ["จำนวนลูกจ้างทั้งหมด", orgProfile.employeeCount ?? ""],
+      ["ชื่อ จป.บริหาร", employeeNamesByRole("isJorporManagement")],
+      ["ชื่อ จป.หัวหน้างาน", employeeNamesByRole("isJorporSupervisor")],
+      ["ชื่อ จป.วิชาชีพ", orgProfile.jorporProfessionalName || ""],
+      ["ชื่อ จป.เทคนิค", orgProfile.jorporTechnicalName || ""],
+      ["รายชื่อกรรมการ คปอ. ฝ่ายนายจ้าง", orgProfile.committeeEmployerNames || ""],
+      ["รายชื่อกรรมการ คปอ. ฝ่ายลูกจ้าง", orgProfile.committeeEmployeeNames || ""],
+      ["วันที่แต่งตั้ง คปอ. ชุดปัจจุบัน", orgProfile.committeeAppointedDate ? formatThaiDate(orgProfile.committeeAppointedDate) : ""],
+      ["วาระ คปอ. สิ้นสุดวันที่", orgProfile.committeeTermEndDate ? formatThaiDate(orgProfile.committeeTermEndDate) : ""],
+    ];
+    const orgSheet = XLSX.utils.aoa_to_sheet([["รายการ", "ข้อมูล"], ...orgRows]);
+    orgSheet["!cols"] = [{ wch: 32 }, { wch: 45 }];
+    XLSX.utils.book_append_sheet(workbook, orgSheet, "ข้อมูลองค์กร-คปอ");
+
+    // --- สถิติอุบัติเหตุรายไตรมาส (ทั้ง 4 ไตรมาสล่าสุด) ---
+    const statsRows = quarters.map((q) => ({
+      "ไตรมาส/ปี": `Q${q.quarterNum}/${q.year + 543} (${thaiMonths[(q.quarterNum - 1) * 3]}-${thaiMonths[(q.quarterNum - 1) * 3 + 2]})`,
+      "จำนวนลูกจ้างเฉลี่ย": q.avgEmployeeCount ?? "",
+      "ชั่วโมงทำงานรวม": q.totalHours || "",
+      "จำนวนอุบัติเหตุถึงขั้นหยุดงาน": q.ltiCount,
+      "จำนวนวันหยุดงานรวม": q.totalLostDays,
+      "IFR (อัตราความถี่)": q.ifr ?? "",
+      "ISR (อัตราความรุนแรง)": q.isr ?? "",
+      "จำนวนอุบัติเหตุที่ต้องแจ้ง กท.16": "",
+      "หมายเหตุ": !q.isComplete ? `กรอกชั่วโมงทำงานไม่ครบ (${q.readyMonths}/3 เดือน)` : "",
+    }));
+    const statsSheet = XLSX.utils.json_to_sheet(statsRows);
+    statsSheet["!cols"] = Object.keys(statsRows[0] || {}).map(() => ({ wch: 22 }));
+    XLSX.utils.book_append_sheet(workbook, statsSheet, "สถิติอุบัติเหตุรายไตรมาส");
+
+    // --- บันทึกอุบัติเหตุ (1 แถวต่อ 1 พนักงานบาดเจ็บ ถ้าไม่มีใครบาดเจ็บ = 1 แถวต่อเคส) ---
+    const sortedIncidents = [...incidents].sort((a, b) => (a.incidentDate < b.incidentDate ? -1 : 1));
+    const incidentRows = [];
+    sortedIncidents.forEach((inc, idx) => {
+      const caseNo = `ACC-${inc.incidentDate?.slice(0, 4) || "0000"}-${String(idx + 1).padStart(3, "0")}`;
+      const latestUpdate = inc.updates[inc.updates.length - 1];
+      const baseRow = {
+        "เลขที่บันทึก": caseNo,
+        "วันที่เกิดเหตุ": inc.incidentDate,
+        "เวลา": inc.incidentTime || "",
+        "แผนก/หน่วยงาน": inc.department !== "-" ? inc.department : "",
+        "สถานที่เกิดเหตุ": inc.location,
+        "ประเภทเหตุการณ์": inc.type,
+        "ระดับความรุนแรง": inc.severity,
+        "สาเหตุเบื้องต้น": inc.probableCause !== "-" ? inc.probableCause : "",
+        "การปฐมพยาบาล/รักษา": inc.firstAidGiven !== "-" ? inc.firstAidGiven : "",
+        "มาตรการแก้ไข/ป้องกัน": latestUpdate ? latestUpdate.note : "",
+        "ผู้รับผิดชอบแก้ไข": "",
+        "กำหนดแล้วเสร็จ": "",
+        "สถานะ": inc.status,
+        "ผู้บันทึก": inc.reporterName !== "-" ? inc.reporterName : "",
+      };
+      if (inc.injuredEmployees.length === 0) {
+        incidentRows.push({ ...baseRow, "ชื่อผู้บาดเจ็บ/ผู้เกี่ยวข้อง": "-", "ตำแหน่งงาน": "-", "ส่วนของร่างกายที่บาดเจ็บ": "-", "จำนวนวันหยุดงาน": 0 });
+      } else {
+        inc.injuredEmployees.forEach((e) => {
+          incidentRows.push({
+            ...baseRow,
+            "ชื่อผู้บาดเจ็บ/ผู้เกี่ยวข้อง": employeeName(e.employeeId),
+            "ตำแหน่งงาน": employeePosition(e.employeeId),
+            "ส่วนของร่างกายที่บาดเจ็บ": e.bodyPart !== "-" ? e.bodyPart : "",
+            "จำนวนวันหยุดงาน": e.lostWorkdays,
+          });
+        });
+      }
+    });
+    if (incidentRows.length > 0) {
+      const incidentSheet = XLSX.utils.json_to_sheet(incidentRows);
+      incidentSheet["!cols"] = Object.keys(incidentRows[0]).map(() => ({ wch: 20 }));
+      XLSX.utils.book_append_sheet(workbook, incidentSheet, "บันทึกอุบัติเหตุ");
+    }
+
+    // --- ทะเบียนสารเคมี ---
+    if (chemicals.length > 0) {
+      const chemRows = chemicals.map((c, idx) => ({
+        "ลำดับ": idx + 1,
+        "ชื่อสารเคมี": c.name,
+        "CAS No.": c.casNumber !== "-" ? c.casNumber : "",
+        "ปริมาณ": c.quantity !== "-" ? c.quantity : "",
+        "หน่วย": c.unit !== "-" ? c.unit : "",
+        "สถานที่จัดเก็บ": c.storageLocation !== "-" ? c.storageLocation : "",
+        "ประเภทความอันตรายหลัก": c.hazardType !== "-" ? c.hazardType : "",
+        "PPE ที่ต้องใช้": c.ppeRequired.map((p) => ppeTypeLabel[p]).join(", "),
+        "สถานะ SDS": sdsStatusLabel[c.sdsStatus] || "",
+        "วันที่บันทึก": c.recordedDate,
+      }));
+      const chemSheet = XLSX.utils.json_to_sheet(chemRows);
+      chemSheet["!cols"] = Object.keys(chemRows[0]).map(() => ({ wch: 20 }));
+      XLSX.utils.book_append_sheet(workbook, chemSheet, "ทะเบียนสารเคมี");
+    }
+
+    // --- บันทึกการฝึกอบรม ---
+    if (trainingRecords.length > 0) {
+      const trainingRows = trainingRecords.map((r) => {
+        const emp = employees.find((e) => e.id === r.employeeId);
+        return {
+          "รหัสพนักงาน": emp?.code ?? "-",
+          "ชื่อ-นามสกุล": emp?.name ?? "-",
+          "แผนก": emp?.department ?? "-",
+          "ตำแหน่ง": emp?.position ?? "-",
+          "หลักสูตรที่อบรม": courseName(r.courseId),
+          "ระดับ จป. (ถ้ามี)": courseCategory(r.courseId) !== "-" ? courseCategory(r.courseId) : "",
+          "วันที่อบรม": r.completionDate,
+          "จำนวนชั่วโมง": "",
+          "สถาบัน/วิทยากร": r.trainingProvider || "",
+          "ผลการอบรม": "ผ่าน",
+          "เลขที่วุฒิบัตร": r.certificateNumber || "",
+          "วันหมดอายุใบรับรอง": r.expiryDate || "",
+          "สถานะ": trainingStatusLabel[getTrainingComplianceStatus(r.employeeId, r.courseId, trainingRecords)] || "",
+        };
+      });
+      const trainingSheet = XLSX.utils.json_to_sheet(trainingRows);
+      trainingSheet["!cols"] = Object.keys(trainingRows[0]).map(() => ({ wch: 18 }));
+      XLSX.utils.book_append_sheet(workbook, trainingSheet, "บันทึกการฝึกอบรม");
+    }
+
+    // --- ทะเบียนเครื่องจักร (ที่ต้องมีวิศวกรตรวจรับรอง) ---
+    if (machinery.length > 0) {
+      const machineryRows = machinery.map((m) => {
+        const latest = m.history[0];
+        return {
+          "รหัสอุปกรณ์": m.code,
+          "ชื่อเครื่องจักร": m.name,
+          "ประเภท": m.name,
+          "สถานที่ติดตั้ง/ใช้งาน": m.location,
+          "รอบตรวจสอบ (เดือน)": m.frequencyMonths,
+          "วันที่ตรวจครั้งล่าสุด": m.lastDate !== "-" ? m.lastDate : "",
+          "ผลการตรวจ": latest ? latest.result : "",
+          "วันที่ครบกำหนดตรวจครั้งถัดไป": m.nextDate !== "-" ? m.nextDate : "",
+          "ผู้ตรวจสอบ/วิศวกรที่รับรอง": latest ? latest.engineerName : "",
+          "เลขที่ใบอนุญาตวิศวกร": latest ? latest.engineerLicenseNumber : "",
+          "เลขที่ใบรับรอง": latest ? latest.certificateNumber : "",
+          "สถานะการใช้งาน": m.status,
+        };
+      });
+      const machinerySheet = XLSX.utils.json_to_sheet(machineryRows);
+      machinerySheet["!cols"] = Object.keys(machineryRows[0]).map(() => ({ wch: 20 }));
+      XLSX.utils.book_append_sheet(workbook, machinerySheet, "ทะเบียนเครื่องจักรอุปกรณ์");
+    }
+
+    // --- ทะเบียนอุปกรณ์ความปลอดภัย (เพิ่มเติมนอกเทมเพลต แต่มีข้อมูลจริงพร้อมอยู่แล้ว) ---
+    if (equipment.length > 0) {
+      const equipmentRows = equipment.map((eq) => {
+        const latest = eq.history[0];
+        return {
+          "รหัสอุปกรณ์": eq.code,
+          "ชื่ออุปกรณ์": eq.name,
+          "สถานที่ติดตั้ง/ใช้งาน": eq.location,
+          "รอบตรวจสอบ": eq.frequency,
+          "วันที่ตรวจครั้งล่าสุด": eq.lastDate !== "-" ? eq.lastDate : "",
+          "ผลการตรวจ": latest ? latest.result : "",
+          "วันครบกำหนดตรวจครั้งถัดไป": eq.nextDate !== "-" ? eq.nextDate : "",
+          "ผู้ตรวจ": latest ? latest.inspector : "",
+          "สถานะ": eq.status,
+        };
+      });
+      const equipmentSheet = XLSX.utils.json_to_sheet(equipmentRows);
+      equipmentSheet["!cols"] = Object.keys(equipmentRows[0]).map(() => ({ wch: 20 }));
+      XLSX.utils.book_append_sheet(workbook, equipmentSheet, "ทะเบียนอุปกรณ์ความปลอดภัย");
+    }
+
+    // --- ผลตรวจวัดสภาพแวดล้อม ---
+    if (environmentalMeasurements.length > 0) {
+      const envRows = environmentalMeasurements.map((m) => ({
+        "วันที่ตรวจวัด": m.measuredAt,
+        "รายการที่ตรวจ": measurementTypeLabel[m.measurementType] || m.measurementType,
+        "จุด/พื้นที่ที่ตรวจ": locationName(m.locationId),
+        "หน่วยงานที่ตรวจ": "",
+        "ผลประเมินภาพรวม": m.result === "fail" ? "ไม่ผ่าน" : "ผ่าน",
+        "ชื่อไฟล์ PDF ที่จะอัปโหลด": "",
+        "วันครบกำหนดตรวจครั้งถัดไป": m.nextDue || "",
+        "ผู้รับผิดชอบ": "",
+      }));
+      const envSheet = XLSX.utils.json_to_sheet(envRows);
+      envSheet["!cols"] = Object.keys(envRows[0]).map(() => ({ wch: 22 }));
+      XLSX.utils.book_append_sheet(workbook, envSheet, "ผลตรวจวัดสภาพแวดล้อม");
+    }
+
+    // sheet ที่ยังไม่มีข้อมูลจริงในระบบ (ตรวจความปลอดภัย / ใบอนุญาตทำงานเสี่ยง / กท.16 รายกรณี)
+    // ใส่แค่หัวคอลัมน์เปล่าไว้กันสับสน พร้อมข้อความอธิบายว่าต้องกรอกเองนอกระบบไปก่อน
+    const placeholderSheets = {
+      "ตรวจความปลอดภัย": ["เลขที่ตรวจ", "วันที่ตรวจ", "พื้นที่/แผนกที่ตรวจ", "หัวข้อที่ตรวจ", "สิ่งที่พบ", "ระดับความเสี่ยง", "มาตรการแก้ไข", "ผู้รับผิดชอบแก้ไข", "กำหนดแล้วเสร็จ", "สถานะแก้ไข", "ผู้ตรวจ"],
+      "ใบอนุญาตทำงานเสี่ยง": ["เลขที่ใบอนุญาต", "ประเภทงาน", "วันที่/เวลาเริ่ม-สิ้นสุด", "ผู้ปฏิบัติงาน", "ผู้อนุญาต", "รายการตรวจสอบ", "ผลการตรวจสอบ", "สถานะ"],
+      "กท16 รายกรณี": ["เลขที่อ้างอิงภายใน", "ชื่อ-นามสกุลผู้ประสบเหตุ", "เลขบัตรประชาชน", "วันที่เกิดเหตุ", "สถานที่เกิดเหตุ", "ลักษณะการประสบอันตราย", "ส่วนของร่างกายที่บาดเจ็บ", "จำนวนวันหยุดงาน", "โรงพยาบาลที่รักษา", "สถานะการยื่น กท.16"],
+    };
+    Object.entries(placeholderSheets).forEach(([sheetName, headers]) => {
+      const sheet = XLSX.utils.aoa_to_sheet([headers, ["ฟีเจอร์นี้ยังไม่มีในระบบ กรุณากรอกข้อมูลส่วนนี้นอกระบบไปก่อน"]]);
+      sheet["!cols"] = headers.map(() => ({ wch: 20 }));
+      XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+    });
+
+    XLSX.writeFile(workbook, `รายงานราชการ_${todayIso()}.xlsx`);
   };
 
   const exportOrgInfo = async () => {
@@ -3123,12 +3391,22 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
 
       {/* ส่วนที่ 3: Export รายไตรมาส */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <p className="text-sm font-bold text-slate-900">Export รายงานราชการ</p>
-          <button onClick={exportOrgInfo} className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-200">
-            Export ข้อมูลองค์กร-คปอ.
-          </button>
+          <div className="flex gap-2">
+            <button onClick={exportOrgInfo} className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-200">
+              Export ข้อมูลองค์กร-คปอ.
+            </button>
+            <button onClick={exportFullReport} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-800">
+              Export รายงานทั้งหมด (.xlsx)
+            </button>
+          </div>
         </div>
+        <p className="text-xs text-slate-400 mb-3">
+          "Export รายงานทั้งหมด" จะรวมทุกข้อมูลที่มีอยู่จริงในระบบไว้ในไฟล์เดียว (อุบัติเหตุ, สารเคมี,
+          การฝึกอบรม, อุปกรณ์, ตรวจวัดสิ่งแวดล้อม, สถิติไตรมาส) ส่วนที่ระบบยังไม่มีฟีเจอร์รองรับ
+          (ตรวจความปลอดภัย, ใบอนุญาตทำงานเสี่ยง, กท.16 รายกรณี) จะได้แค่ sheet เปล่าพร้อมหัวคอลัมน์
+        </p>
         <div className="space-y-3">
           {quarters.map((q) => (
             <Card key={q.key}>
@@ -3515,8 +3793,237 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
 }
 
 // ---------------------------------------------------------------
-// Checklist
+// ทะเบียนเครื่องจักร — แยกจากอุปกรณ์ความปลอดภัย ต้องมีวิศวกรที่ขึ้นทะเบียนมาตรวจ/รับรอง
 // ---------------------------------------------------------------
+function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteInspection, onDeleteMachinery }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ result: "ผ่าน", engineerName: "", engineerLicenseNumber: "", certificateNumber: "", findings: "", correctiveDeadline: "" });
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState({ name: machineryCategoryOptions[0], code: "", location: "", frequencyMonths: "12" });
+
+  const selected = machinery.find((m) => m.id === selectedId);
+
+  if (selected) {
+    const needsDeadline = form.result === "ไม่ผ่าน";
+    const canSubmit = !needsDeadline || form.correctiveDeadline.trim() !== "";
+
+    const submit = () => {
+      if (!canSubmit) return;
+      onAddInspection(selected.id, {
+        date: todayIso(),
+        engineerName: form.engineerName || "-",
+        engineerLicenseNumber: form.engineerLicenseNumber || "-",
+        certificateNumber: form.certificateNumber || "-",
+        result: form.result,
+        findings: form.findings || "-",
+        correctiveDeadline: needsDeadline ? form.correctiveDeadline : null,
+      });
+      setForm({ result: "ผ่าน", engineerName: "", engineerLicenseNumber: "", certificateNumber: "", findings: "", correctiveDeadline: "" });
+      setShowForm(false);
+    };
+
+    return (
+      <div className="space-y-5">
+        <button onClick={() => setSelectedId(null)} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
+          <ArrowLeft size={16} /> กลับไปทะเบียนเครื่องจักร
+        </button>
+
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-slate-900">{selected.code}</h1>
+            <p className="text-sm text-slate-500 mt-0.5">{selected.name} · {selected.location}</p>
+          </div>
+          <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <MetricCard label="รอบตรวจ" value={`ทุก ${selected.frequencyMonths} เดือน`} />
+          <MetricCard label="ตรวจล่าสุด" value={selected.lastDate === "-" ? "-" : formatThaiDate(selected.lastDate)} />
+          <MetricCard label="ครบกำหนดครั้งถัดไป" value={selected.nextDate === "-" ? "-" : formatThaiDate(selected.nextDate)} />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-bold text-slate-900">ประวัติการตรวจรับรองโดยวิศวกร</p>
+          <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800">
+            <Plus size={16} /> บันทึกผลตรวจ
+          </button>
+        </div>
+
+        {showForm && (
+          <Card>
+            <div className="mb-3">
+              <label className="text-xs font-bold text-slate-500 block mb-1">ผลการตรวจ</label>
+              <div className="flex gap-2 flex-wrap">
+                {["ผ่าน", "ผ่านแบบมีข้อสังเกต", "ไม่ผ่าน"].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setForm({ ...form, result: r })}
+                    className={`text-xs px-3 py-1.5 rounded-lg border ${form.result === r ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อวิศวกรที่รับรอง</label>
+                <input value={form.engineerName} onChange={(e) => setForm({ ...form, engineerName: e.target.value })} placeholder="ชื่อ-นามสกุล" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">เลขที่ใบอนุญาตวิศวกร</label>
+                <input value={form.engineerLicenseNumber} onChange={(e) => setForm({ ...form, engineerLicenseNumber: e.target.value })} placeholder="เช่น กว.12345" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div className="mb-3">
+              <label className="text-xs font-bold text-slate-500 block mb-1">เลขที่ใบรับรองการตรวจ</label>
+              <input value={form.certificateNumber} onChange={(e) => setForm({ ...form, certificateNumber: e.target.value })} placeholder="เช่น CR-2569-018" className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div className="mb-3">
+              <label className="text-xs font-bold text-slate-500 block mb-1">ข้อสังเกต/รายละเอียด</label>
+              <textarea rows={2} value={form.findings} onChange={(e) => setForm({ ...form, findings: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none" />
+            </div>
+            {needsDeadline && (
+              <div className="mb-3">
+                <label className="text-xs font-bold text-slate-500 block mb-1">กำหนดแก้ไข/ตรวจซ้ำภายในวันที่</label>
+                <input type="date" value={form.correctiveDeadline} onChange={(e) => setForm({ ...form, correctiveDeadline: e.target.value })} className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">ยกเลิก</button>
+              <button onClick={submit} disabled={!canSubmit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-40">บันทึก</button>
+            </div>
+          </Card>
+        )}
+
+        <div className="space-y-4">
+          {selected.history.map((h, i) => (
+            <div key={h.rowId} className="flex gap-3">
+              <div className="flex flex-col items-center pt-1.5">
+                <div className={`w-2 h-2 rounded-full ${h.result === "ไม่ผ่าน" ? "bg-red-500" : h.result === "ผ่านแบบมีข้อสังเกต" ? "bg-amber-500" : "bg-emerald-500"}`} />
+                {i < selected.history.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
+              </div>
+              <div className="pb-4 flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-bold text-slate-800">{formatThaiDate(h.date)}</p>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={statusTone(h.result)}>{h.result}</Badge>
+                    <ConfirmDeleteButton onConfirm={() => onDeleteInspection(selected.id, h.rowId)} />
+                  </div>
+                </div>
+                <p className="text-sm text-slate-700 mt-1">วิศวกร: {h.engineerName} · เลขใบอนุญาต: {h.engineerLicenseNumber}</p>
+                <p className="text-sm text-slate-500 mt-0.5">เลขที่ใบรับรอง: {h.certificateNumber}</p>
+                {h.findings !== "-" && <p className="text-sm text-slate-600 mt-1">{h.findings}</p>}
+                {h.correctiveDeadline && (
+                  <p className="text-sm text-red-600 mt-1">กำหนดแก้ไขภายในวันที่ {formatThaiDate(h.correctiveDeadline)}</p>
+                )}
+              </div>
+            </div>
+          ))}
+          {selected.history.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีประวัติการตรวจ</p>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold text-slate-900">ทะเบียนเครื่องจักร</h1>
+        <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg">
+          <Plus size={16} /> เพิ่มเครื่องจักร
+        </button>
+      </div>
+
+      <p className="text-xs text-slate-400 -mt-3">
+        สำหรับเครื่องจักร/อุปกรณ์ที่กฎหมายบังคับให้วิศวกรที่ขึ้นทะเบียนมาตรวจรับรอง เช่น ปั้นจั่น, หม้อไอน้ำ,
+        ถังรับความดัน, ลิฟต์, รถยก — ถ้าเป็นอุปกรณ์ความปลอดภัยทั่วไปที่ จป. ตรวจเองได้ ให้ใช้เมนู "อุปกรณ์ความปลอดภัย" แทน
+      </p>
+
+      {showAddForm && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-slate-900">เพิ่มเครื่องจักร</p>
+            <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ประเภทเครื่องจักร</label>
+              <select value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                {machineryCategoryOptions.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">รหัสทรัพย์สิน</label>
+              <input value={addForm.code} onChange={(e) => setAddForm({ ...addForm, code: e.target.value })} placeholder="เช่น CRANE-001" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">สถานที่ติดตั้ง/ใช้งาน</label>
+              <input value={addForm.location} onChange={(e) => setAddForm({ ...addForm, location: e.target.value })} placeholder="เช่น โกดังสินค้า A" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">รอบตรวจ (เดือน)</label>
+              <input type="number" min="1" value={addForm.frequencyMonths} onChange={(e) => setAddForm({ ...addForm, frequencyMonths: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowAddForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">ยกเลิก</button>
+            <button
+              onClick={() => {
+                if (!addForm.code.trim()) return;
+                onAddMachinery(addForm);
+                setAddForm({ name: machineryCategoryOptions[0], code: "", location: "", frequencyMonths: "12" });
+                setShowAddForm(false);
+              }}
+              className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white"
+            >
+              บันทึก
+            </button>
+          </div>
+        </Card>
+      )}
+
+      <Card className="p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-left">
+                <th className="px-4 py-2.5 font-bold">รหัส</th>
+                <th className="px-4 py-2.5 font-bold">ประเภท</th>
+                <th className="px-4 py-2.5 font-bold">สถานที่</th>
+                <th className="px-4 py-2.5 font-bold">ครบกำหนดครั้งถัดไป</th>
+                <th className="px-4 py-2.5 font-bold">สถานะ</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {machinery.map((m) => (
+                <tr key={m.id} onClick={() => setSelectedId(m.id)} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50">
+                  <td className="px-4 py-2.5 font-bold text-slate-900">{m.code}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{m.name}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{m.location}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{m.nextDate === "-" ? "-" : formatThaiDate(m.nextDate)}</td>
+                  <td className="px-4 py-2.5"><Badge tone={statusTone(m.status)}>{m.status}</Badge></td>
+                  <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                    <ConfirmDeleteButton onConfirm={() => onDeleteMachinery(m.id)} />
+                  </td>
+                </tr>
+              ))}
+              {machinery.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-3 text-sm text-slate-400">ยังไม่มีเครื่องจักรที่บันทึกไว้</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+
 
 function ChecklistPage() {
   const [header, setHeader] = useState({
@@ -6333,6 +6840,7 @@ const NAV = [
     items: [
       { key: "ppe", label: "PPE", icon: HardHat },
       { key: "equipment", label: "อุปกรณ์ความปลอดภัย", icon: Wrench },
+      { key: "machinery", label: "เครื่องจักร", icon: Settings },
     ],
   },
   { key: "chemicals", label: "ทะเบียนสารเคมี", icon: FlaskConical },
@@ -6453,6 +6961,8 @@ export default function JorPorPrototype() {
   const [ppeLoading, setPpeLoading] = useState(false);
   const [equipment, setEquipmentData] = useState([]);
   const [equipmentLoading, setEquipmentLoading] = useState(false);
+  const [machinery, setMachineryData] = useState([]);
+  const [machineryLoading, setMachineryLoading] = useState(false);
   const [environmentalMeasurements, setEnvironmentalMeasurementsData] = useState([]);
   const [environmentalLoading, setEnvironmentalLoading] = useState(false);
   const [noncompliance, setNoncomplianceData] = useState([]);
@@ -6565,7 +7075,7 @@ export default function JorPorPrototype() {
   async function fetchTrainingRecords() {
     const { data, error } = await supabase
       .from("training_records")
-      .select("id, employee_id, course_id, completion_date, expiry_date");
+      .select("id, employee_id, course_id, completion_date, expiry_date, certificate_number, training_provider");
     if (error) {
       console.error("fetchTrainingRecords error:", error);
       return;
@@ -6948,6 +7458,7 @@ export default function JorPorPrototype() {
       fetchIncidents();
       fetchPpe();
       fetchEquipment();
+      fetchMachinery();
       fetchEnvironmentalMeasurements();
       fetchNoncompliance();
       fetchChemicals();
@@ -7815,6 +8326,133 @@ export default function JorPorPrototype() {
     );
   };
 
+  async function fetchMachinery() {
+    setMachineryLoading(true);
+    const { data: machineryRows, error } = await supabase
+      .from("machinery")
+      .select("id, category, asset_code, location, inspection_frequency_months, last_inspection_date, next_inspection_due, status")
+      .eq("is_active", true)
+      .order("location");
+    if (error) {
+      console.error("fetchMachinery error:", error);
+      setMachineryLoading(false);
+      return;
+    }
+    const machineryIds = (machineryRows || []).map((r) => r.id);
+    let historyByMachinery = {};
+    if (machineryIds.length > 0) {
+      const { data: inspectionRows } = await supabase
+        .from("machinery_inspection_records")
+        .select("id, machinery_id, inspected_at, engineer_name, engineer_license_number, certificate_number, result, findings, corrective_deadline")
+        .in("machinery_id", machineryIds)
+        .order("inspected_at", { ascending: false });
+      (inspectionRows || []).forEach((r) => {
+        if (!historyByMachinery[r.machinery_id]) historyByMachinery[r.machinery_id] = [];
+        historyByMachinery[r.machinery_id].push(mapMachineryInspectionRow(r));
+      });
+    }
+    setMachineryData(
+      (machineryRows || []).map((r) => ({ ...mapMachineryRow(r), history: historyByMachinery[r.id] || [] }))
+    );
+    setMachineryLoading(false);
+  }
+
+  const addMachinery = async (form) => {
+    const { data, error } = await supabase
+      .from("machinery")
+      .insert({
+        organization_id: currentUser.organizationId,
+        category: machineryCategoryUiToDb[form.name] || "other",
+        asset_code: form.code,
+        name: form.name,
+        location: form.location,
+        inspection_frequency_months: Number(form.frequencyMonths) || 12,
+        status: "normal",
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("เพิ่มเครื่องจักรไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setMachineryData([...machinery, { ...mapMachineryRow(data), history: [] }]);
+  };
+
+  const deleteMachineryUnit = async (id) => {
+    const { error } = await supabase.from("machinery").delete().eq("id", id);
+    if (error) {
+      alert("ลบเครื่องจักรไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setMachineryData(machinery.filter((m) => m.id !== id));
+  };
+
+  const addMachineryInspection = async (machineryId, record) => {
+    const m = machinery.find((x) => x.id === machineryId);
+    const { data, error } = await supabase
+      .from("machinery_inspection_records")
+      .insert({
+        organization_id: currentUser.organizationId,
+        machinery_id: machineryId,
+        inspected_at: record.date,
+        engineer_name: record.engineerName === "-" ? null : record.engineerName,
+        engineer_license_number: record.engineerLicenseNumber === "-" ? null : record.engineerLicenseNumber,
+        certificate_number: record.certificateNumber === "-" ? null : record.certificateNumber,
+        result: machineryResultUiToDb[record.result] || "pass",
+        findings: record.findings === "-" ? null : record.findings,
+        corrective_deadline: record.correctiveDeadline,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกผลตรวจไม่สำเร็จ: " + error.message);
+      return;
+    }
+    const failed = record.result === "ไม่ผ่าน";
+    const nextDue = addMonthsIso(record.date, m?.frequencyMonths || 12);
+    const newStatus = failed ? "pending_reinspection" : "normal";
+    await supabase
+      .from("machinery")
+      .update({ last_inspection_date: record.date, next_inspection_due: nextDue, status: newStatus })
+      .eq("id", machineryId);
+    setMachineryData(
+      machinery.map((x) =>
+        x.id === machineryId
+          ? { ...x, history: [mapMachineryInspectionRow(data), ...x.history], lastDate: record.date, nextDate: nextDue, status: failed ? "รอตรวจซ้ำ" : "ปกติ" }
+          : x
+      )
+    );
+  };
+
+  const deleteMachineryInspection = async (machineryId, rowId) => {
+    const { error } = await supabase.from("machinery_inspection_records").delete().eq("id", rowId);
+    if (error) {
+      alert("ลบผลตรวจไม่สำเร็จ: " + error.message);
+      return;
+    }
+    const m = machinery.find((x) => x.id === machineryId);
+    const newHistory = (m?.history || []).filter((h) => h.rowId !== rowId);
+    const latest = newHistory[0];
+    const latestFailed = latest?.result === "ไม่ผ่าน";
+    const newLastDate = latest ? latest.date : null;
+    const newNextDue = latest ? addMonthsIso(latest.date, m?.frequencyMonths || 12) : null;
+    await supabase
+      .from("machinery")
+      .update({
+        last_inspection_date: newLastDate,
+        next_inspection_due: newNextDue,
+        status: latest ? (latestFailed ? "pending_reinspection" : "normal") : "normal",
+      })
+      .eq("id", machineryId);
+    setMachineryData(
+      machinery.map((x) =>
+        x.id === machineryId
+          ? { ...x, history: newHistory, lastDate: newLastDate || "-", nextDate: newNextDue || "-", status: latest ? (latestFailed ? "รอตรวจซ้ำ" : "ปกติ") : "ปกติ" }
+          : x
+      )
+    );
+  };
+
   const selectPage = (key) => {
     setPage(key);
     setMobileMenuOpen(false); // ปิดเมนูอัตโนมัติหลังเลือกเมนูบนมือถือ
@@ -7932,6 +8570,13 @@ export default function JorPorPrototype() {
             onDeleteWorkingHours={deleteWorkingHours}
             incidents={incidents}
             employees={employees}
+            chemicals={chemicals}
+            equipment={equipment}
+            machinery={machinery}
+            environmentalMeasurements={environmentalMeasurements}
+            trainingRecords={trainingRecords}
+            trainingCourses={trainingCourses}
+            locations={locations}
           />
         )}
         {page === "equipment" && (
@@ -7941,6 +8586,15 @@ export default function JorPorPrototype() {
             onAddEquipment={addEquipment}
             onDeleteInspection={deleteInspection}
             onDeleteEquipment={deleteEquipmentUnit}
+          />
+        )}
+        {page === "machinery" && (
+          <MachineryPage
+            machinery={machinery}
+            onAddInspection={addMachineryInspection}
+            onAddMachinery={addMachinery}
+            onDeleteInspection={deleteMachineryInspection}
+            onDeleteMachinery={deleteMachineryUnit}
           />
         )}
         {page === "locations" && (
