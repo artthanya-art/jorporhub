@@ -3566,7 +3566,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ result: "ผ่าน", findings: "", action: "", correctiveDeadline: "" });
   const [showAddForm, setShowAddForm] = useState(false);
-  const [addForm, setAddForm] = useState({ name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "", frequency: frequencyOptions[0] });
+  const [addForm, setAddForm] = useState({ name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "", frequency: frequencyOptions[0], lastDate: "", nextDateOverride: "" });
 
   const selected = equipment.find((e) => e.id === selectedId);
 
@@ -3833,6 +3833,28 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               {frequencyOptions.map((f) => <option key={f}>{f}</option>)}
             </select>
           </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">วันที่ตรวจล่าสุด (ถ้ามี)</label>
+              <input
+                type="date"
+                value={addForm.lastDate}
+                onChange={(e) => setAddForm({ ...addForm, lastDate: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-slate-400 mt-1">ถ้ากรอก ระบบจะคำนวณวันนัดตรวจครั้งถัดไปจากรอบตรวจให้อัตโนมัติ</p>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">หรือกำหนดวันนัดตรวจครั้งถัดไปเอง</label>
+              <input
+                type="date"
+                value={addForm.nextDateOverride}
+                onChange={(e) => setAddForm({ ...addForm, nextDateOverride: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-slate-400 mt-1">ถ้ากรอกช่องนี้ จะใช้วันที่นี้แทนค่าที่คำนวณอัตโนมัติ</p>
+            </div>
+          </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowAddForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
               ยกเลิก
@@ -3841,6 +3863,12 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               onClick={() => {
                 const finalName = addForm.name === CUSTOM_EQUIPMENT_OPTION ? addForm.customName.trim() : addForm.name;
                 if (!finalName || !addForm.code.trim() || !addForm.location.trim()) return;
+                const freqDbKey = inspectionFrequencyUiToDb[addForm.frequency] || "custom";
+                const freqDays = inspectionFrequencyDays[freqDbKey] ?? 30;
+                // ลำดับความสำคัญ: กำหนดวันนัดตรวจเองเจาะจง > คำนวณจากวันตรวจล่าสุด > คำนวณจากวันนี้
+                // (ไม่ปล่อยให้วันนัดตรวจครั้งถัดไปว่างเปล่าอีกต่อไป)
+                const nextDate = addForm.nextDateOverride
+                  || (addForm.lastDate ? addDaysIso(addForm.lastDate, freqDays) : addDaysIso(todayIso(), freqDays));
                 onAddEquipment({
                   id: Date.now(),
                   code: addForm.code,
@@ -3848,13 +3876,13 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
                   location: addForm.location,
                   brand: addForm.brand || "-",
                   frequency: addForm.frequency,
-                  lastDate: "-",
-                  nextDate: "-",
+                  lastDate: addForm.lastDate || "-",
+                  nextDate,
                   status: "ปกติ",
                   pendingReinspectionDue: null,
                   history: [],
                 });
-                setAddForm({ name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "", frequency: frequencyOptions[0] });
+                setAddForm({ name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "", frequency: frequencyOptions[0], lastDate: "", nextDateOverride: "" });
                 setShowAddForm(false);
               }}
               className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white"
@@ -8309,6 +8337,8 @@ export default function JorPorPrototype() {
         brand: unit.brand === "-" ? null : unit.brand,
         location: unit.location,
         inspection_frequency: inspectionFrequencyUiToDb[unit.frequency] || "custom",
+        last_inspection_date: unit.lastDate && unit.lastDate !== "-" ? unit.lastDate : null,
+        next_inspection_due: unit.nextDate && unit.nextDate !== "-" ? unit.nextDate : null,
         status: "normal",
       })
       .select()
