@@ -3,7 +3,7 @@ import { supabase } from "./lib/supabaseClient";
 import {
   LayoutDashboard, AlertTriangle, HardHat, Wrench, ClipboardCheck,
   Plus, X, Camera, ArrowLeft, ChevronRight, Menu, Users, MapPin, ShieldAlert,
-  Wind, GraduationCap, LogOut, FlaskConical, FileText, Settings,
+  Wind, GraduationCap, LogOut, FlaskConical, FileText, Settings, Search,
 } from "lucide-react";
 
 // ---------------------------------------------------------------
@@ -144,6 +144,7 @@ const PAGE_OPTIONS = [
   { key: "equipment", label: "อุปกรณ์ความปลอดภัย" },
   { key: "machinery", label: "ทะเบียนเครื่องจักร" },
   { key: "chemicals", label: "ทะเบียนสารเคมี" },
+  { key: "safetyInspections", label: "บันทึกตรวจความปลอดภัย" },
   { key: "govReports", label: "รายงานราชการ" },
 ];
 const ALL_PAGE_KEYS = PAGE_OPTIONS.map((p) => p.key);
@@ -262,6 +263,49 @@ function mapLocationRow(loc, hazardRows, latestAssessment, assessorName, ppeRows
 // หลักสูตร (training_courses) — validity_period_days → validityDays
 function mapCourseRow(row) {
   return { id: row.id, name: row.name, category: row.category || null, validityDays: row.validity_period_days };
+}
+
+// ---------------------------------------------------------------
+// บันทึกตรวจความปลอดภัย (safety_inspections + safety_inspection_findings) <-> Supabase mapping
+// ---------------------------------------------------------------
+const inspectionRiskLevelOptions = ["high", "medium", "low"]; // ใช้ riskLevelLabel/riskLevelTone ร่วมกับที่มีอยู่แล้ว
+const safetyInspectionStatusLabel = { open: "เปิดเคส", in_progress: "กำลังดำเนินการ", closed: "ปิดเคสแล้ว" };
+const safetyInspectionStatusOptions = Object.keys(safetyInspectionStatusLabel);
+const safetyInspectionStatusTone = (s) => {
+  if (s === "ปิดเคสแล้ว") return "bg-emerald-50 text-emerald-700";
+  if (s === "กำลังดำเนินการ") return "bg-amber-50 text-amber-700";
+  return "bg-red-50 text-red-700";
+};
+
+function mapSafetyInspectionRow(row, findingRows) {
+  return {
+    id: row.id,
+    inspectionNumber: row.inspection_number,
+    inspectionDate: row.inspection_date ? row.inspection_date.slice(0, 10) : "",
+    areaDepartment: row.area_department || "-",
+    topic: row.topic || "-",
+    inspectorName: row.inspector_name || "-",
+    inspectionCycle: row.inspection_cycle || "-",
+    approverName: row.approver_name || "-",
+    caseClosedDate: row.case_closed_date ? row.case_closed_date.slice(0, 10) : null,
+    findings: (findingRows || []).map(mapSafetyInspectionFindingRow),
+  };
+}
+
+function mapSafetyInspectionFindingRow(row) {
+  return {
+    rowId: row.id,
+    finding: row.finding,
+    riskLevel: row.risk_level,
+    photoBefore: row.photo_before || "-",
+    correctiveAction: row.corrective_action || "-",
+    responsiblePerson: row.responsible_person || "-",
+    dueDate: row.due_date,
+    status: safetyInspectionStatusLabel[row.status] || row.status,
+    actualCompletionDate: row.actual_completion_date,
+    photoAfterOrEvidence: row.photo_after_or_evidence || "-",
+    isDocumentationFix: !!row.is_documentation_fix,
+  };
 }
 
 // ---------------------------------------------------------------
@@ -577,7 +621,7 @@ async function fetchUserProfile(authUserId) {
 // ที่หน้า "จัดการประเภทผู้ใช้งาน" เท่านั้น ผู้ใช้ที่มีประเภทเดียวกันจะเห็นเมนูเหมือนกันทั้งหมด
 const initialTierPermissions = {
   free: ["dashboard", "incidents", "employees", "checklist"],
-  silver: ["dashboard", "incidents", "ppe", "equipment", "machinery", "employees", "locations", "checklist", "chemicals", "govReports"],
+  silver: ["dashboard", "incidents", "ppe", "equipment", "machinery", "employees", "locations", "checklist", "chemicals", "govReports", "safetyInspections"],
   gold: [...ALL_PAGE_KEYS],
 };
 
@@ -2775,6 +2819,358 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
 const sdsStatusLabel = { attached: "แนบแล้ว", pending: "รอเพิ่ม" };
 const sdsStatusTone = (s) => (s === "attached" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700");
 
+// ---------------------------------------------------------------
+// บันทึกตรวจความปลอดภัย — ตามแบบฟอร์ม "Safety Inspection Record Form"
+// รอบตรวจ 1 รอบ อาจพบข้อบกพร่องได้หลายข้อ แต่ละข้อติดตามสถานะแยกกันได้
+// ---------------------------------------------------------------
+function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = inspections.find((i) => i.id === selectedId);
+
+  if (selected) {
+    return (
+      <SafetyInspectionDetail
+        inspection={selected}
+        onBack={() => setSelectedId(null)}
+        onUpdate={onUpdate}
+        onAddFinding={onAddFinding}
+        onUpdateFinding={onUpdateFinding}
+        onDeleteFinding={onDeleteFinding}
+      />
+    );
+  }
+
+  return (
+    <SafetyInspectionsList
+      inspections={inspections}
+      onAdd={onAdd}
+      onDelete={onDelete}
+      onSelect={setSelectedId}
+    />
+  );
+}
+
+function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect }) {
+  const [showForm, setShowForm] = useState(false);
+  const emptyForm = { inspectionDate: todayIso(), areaDepartment: "", topic: "", inspectorName: "", inspectionCycle: "", approverName: "", findings: [] };
+  const [form, setForm] = useState(emptyForm);
+  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+
+  const addFindingToForm = () => {
+    if (!form.finding && !newFinding.finding.trim()) return;
+    setForm({ ...form, findings: [...form.findings, { ...newFinding, tempId: Date.now() }] });
+    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+  };
+  const removeFindingFromForm = (tempId) => setForm({ ...form, findings: form.findings.filter((f) => f.tempId !== tempId) });
+
+  const submit = () => {
+    if (!form.inspectionDate) return;
+    onAdd(form);
+    setForm(emptyForm);
+    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+    setShowForm(false);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold text-slate-900">บันทึกตรวจความปลอดภัย</h1>
+        <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg">
+          <Plus size={16} /> บันทึกการตรวจใหม่
+        </button>
+      </div>
+
+      {showForm && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-slate-900">1. ข้อมูลการตรวจ</p>
+            <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">วันที่ตรวจ</label>
+              <input type="date" value={form.inspectionDate} onChange={(e) => setForm({ ...form, inspectionDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">รอบการตรวจ (สัปดาห์/เดือน)</label>
+              <input value={form.inspectionCycle} onChange={(e) => setForm({ ...form, inspectionCycle: e.target.value })} placeholder="เช่น รายสัปดาห์" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">พื้นที่/แผนกที่ตรวจ</label>
+              <input value={form.areaDepartment} onChange={(e) => setForm({ ...form, areaDepartment: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">หัวข้อที่ตรวจ</label>
+              <input value={form.topic} onChange={(e) => setForm({ ...form, topic: e.target.value })} placeholder="เช่น ความปลอดภัยทางไฟฟ้า" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="mb-4">
+            <label className="text-xs font-bold text-slate-500 block mb-1">ผู้ตรวจ</label>
+            <input value={form.inspectorName} onChange={(e) => setForm({ ...form, inspectorName: e.target.value })} className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+
+          <div className="mb-4 border border-slate-200 rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
+              <p className="text-xs font-bold text-slate-600">2. สิ่งที่พบจากการตรวจ (ถ้ามี)</p>
+            </div>
+            {form.findings.length > 0 && (
+              <div className="divide-y divide-slate-100">
+                {form.findings.map((f) => (
+                  <div key={f.tempId} className="px-3 py-2 flex items-start justify-between gap-2 text-sm">
+                    <div>
+                      <p className="text-slate-800">{f.finding}</p>
+                      <p className="text-xs text-slate-500">ความเสี่ยง {riskLevelLabel[f.riskLevel]} {f.responsiblePerson && <>· รับผิดชอบ: {f.responsiblePerson}</>} {f.dueDate && <>· กำหนดเสร็จ {formatThaiDate(f.dueDate)}</>}</p>
+                    </div>
+                    <button onClick={() => removeFindingFromForm(f.tempId)} className="text-xs text-slate-400 underline hover:text-red-600 shrink-0">ลบ</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="p-3 bg-white space-y-2">
+              <textarea rows={2} value={newFinding.finding} onChange={(e) => setNewFinding({ ...newFinding, finding: e.target.value })} placeholder="สิ่งที่พบ (ข้อบกพร่อง)" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none" />
+              <div className="grid sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความเสี่ยง</label>
+                  <select value={newFinding.riskLevel} onChange={(e) => setNewFinding({ ...newFinding, riskLevel: e.target.value })} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+                    {inspectionRiskLevelOptions.map((r) => <option key={r} value={r}>{riskLevelLabel[r]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">ผู้รับผิดชอบแก้ไข</label>
+                  <input value={newFinding.responsiblePerson} onChange={(e) => setNewFinding({ ...newFinding, responsiblePerson: e.target.value })} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">กำหนดแล้วเสร็จ</label>
+                  <input type="date" value={newFinding.dueDate} onChange={(e) => setNewFinding({ ...newFinding, dueDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+                </div>
+              </div>
+              <textarea rows={2} value={newFinding.correctiveAction} onChange={(e) => setNewFinding({ ...newFinding, correctiveAction: e.target.value })} placeholder="มาตรการแก้ไข" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none" />
+              <div className="flex justify-end">
+                <button onClick={addFindingToForm} className="flex items-center gap-1.5 text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg">
+                  <Plus size={13} /> เพิ่มในรายการ
+                </button>
+              </div>
+              <p className="text-xs text-slate-400">เพิ่ม/แก้ไขข้อบกพร่องเพิ่มเติมภายหลังได้ที่หน้ารายละเอียดของรอบตรวจนี้</p>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label className="text-xs font-bold text-slate-500 block mb-1">4. จป. ผู้ตรวจสอบ/ปิดเคส (ลงชื่อ)</label>
+            <input value={form.approverName} onChange={(e) => setForm({ ...form, approverName: e.target.value })} className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">ยกเลิก</button>
+            <button onClick={submit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">บันทึก</button>
+          </div>
+        </Card>
+      )}
+
+      <Card className="p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-left">
+                <th className="px-4 py-2.5 font-bold">เลขที่ตรวจ</th>
+                <th className="px-4 py-2.5 font-bold">วันที่ตรวจ</th>
+                <th className="px-4 py-2.5 font-bold">พื้นที่/แผนก</th>
+                <th className="px-4 py-2.5 font-bold">หัวข้อที่ตรวจ</th>
+                <th className="px-4 py-2.5 font-bold">ข้อบกพร่อง</th>
+                <th className="px-4 py-2.5 font-bold">ยังไม่ปิด</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {inspections.map((i) => {
+                const openCount = i.findings.filter((f) => f.status !== "ปิดเคสแล้ว").length;
+                return (
+                  <tr key={i.id} onClick={() => onSelect(i.id)} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50">
+                    <td className="px-4 py-2.5 font-bold text-slate-900">{i.inspectionNumber}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(i.inspectionDate)}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{i.areaDepartment}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{i.topic}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{i.findings.length} ข้อ</td>
+                    <td className="px-4 py-2.5">
+                      {openCount > 0 ? <Badge tone="bg-red-50 text-red-700">{openCount} ข้อ</Badge> : <Badge tone="bg-emerald-50 text-emerald-700">ปิดครบแล้ว</Badge>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                      <ConfirmDeleteButton onConfirm={() => onDelete(i.id)} />
+                    </td>
+                  </tr>
+                );
+              })}
+              {inspections.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-3 text-sm text-slate-400">ยังไม่มีบันทึกการตรวจความปลอดภัย</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding }) {
+  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+  const [editingRowId, setEditingRowId] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+
+  const startEdit = (f) => {
+    setEditingRowId(f.rowId);
+    setEditForm({
+      correctiveAction: f.correctiveAction === "-" ? "" : f.correctiveAction,
+      responsiblePerson: f.responsiblePerson === "-" ? "" : f.responsiblePerson,
+      dueDate: f.dueDate || "",
+      status: f.status,
+      actualCompletionDate: f.actualCompletionDate || "",
+      photoAfterOrEvidence: f.photoAfterOrEvidence === "-" ? "" : f.photoAfterOrEvidence,
+      isDocumentationFix: f.isDocumentationFix,
+    });
+  };
+
+  const saveEdit = (rowId) => {
+    // บังคับให้มีภาพถ่ายหลังแก้ไข/หลักฐานก่อนปิดเคส เว้นแต่เป็นการแก้ไขเชิงเอกสาร/นโยบาย (ตามฟอร์มต้นฉบับ)
+    if (editForm.status === "ปิดเคสแล้ว" && !editForm.isDocumentationFix && !editForm.photoAfterOrEvidence.trim()) {
+      alert("ต้องแนบภาพถ่ายหลังแก้ไข (หรือติ๊ก 'แก้ไขเชิงเอกสาร/นโยบาย' แล้วระบุหลักฐานอื่นแทน) ก่อนปิดเคส");
+      return;
+    }
+    onUpdateFinding(inspection.id, rowId, editForm);
+    setEditingRowId(null);
+  };
+
+  const addFinding = () => {
+    if (!newFinding.finding.trim()) return;
+    onAddFinding(inspection.id, newFinding);
+    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+  };
+
+  return (
+    <div className="space-y-5">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
+        <ArrowLeft size={16} /> กลับไปทะเบียนการตรวจ
+      </button>
+
+      <div>
+        <h1 className="text-lg font-bold text-slate-900">{inspection.inspectionNumber}</h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          {formatThaiDate(inspection.inspectionDate)} · {inspection.areaDepartment} · {inspection.topic}
+        </p>
+        <p className="text-xs text-slate-400 mt-1">ผู้ตรวจ: {inspection.inspectorName} · รอบตรวจ: {inspection.inspectionCycle} · จป. ผู้ตรวจสอบ/ปิดเคส: {inspection.approverName}</p>
+      </div>
+
+      <div>
+        <p className="text-sm font-bold text-slate-900 mb-3">สิ่งที่พบและการติดตามผล</p>
+        <div className="space-y-3">
+          {inspection.findings.map((f) => (
+            <Card key={f.rowId}>
+              {editingRowId === f.rowId ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-slate-800">{f.finding}</p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 block mb-1">มาตรการแก้ไข</label>
+                      <textarea rows={2} value={editForm.correctiveAction} onChange={(e) => setEditForm({ ...editForm, correctiveAction: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 block mb-1">ผู้รับผิดชอบแก้ไข</label>
+                      <input value={editForm.responsiblePerson} onChange={(e) => setEditForm({ ...editForm, responsiblePerson: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 block mb-1">กำหนดแล้วเสร็จ</label>
+                      <input type="date" value={editForm.dueDate} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 block mb-1">สถานะ</label>
+                      <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                        {safetyInspectionStatusOptions.map((s) => <option key={s} value={safetyInspectionStatusLabel[s]}>{safetyInspectionStatusLabel[s]}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {editForm.status === "ปิดเคสแล้ว" && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                      <label className="flex items-center gap-2 text-xs text-slate-700">
+                        <input type="checkbox" checked={editForm.isDocumentationFix} onChange={(e) => setEditForm({ ...editForm, isDocumentationFix: e.target.checked })} />
+                        แก้ไขเชิงเอกสาร/นโยบาย (เช่น แก้ไข SOP หรืออบรมเพิ่มเติม — ไม่บังคับภาพถ่าย)
+                      </label>
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 block mb-1">
+                          {editForm.isDocumentationFix ? "หลักฐานอื่น (เช่น สำเนา SOP ที่แก้ไข/รายชื่อผู้เข้าอบรม)" : "ภาพถ่ายหลังแก้ไข (ชื่อไฟล์/คำอธิบาย) *"}
+                        </label>
+                        <input value={editForm.photoAfterOrEvidence} onChange={(e) => setEditForm({ ...editForm, photoAfterOrEvidence: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 block mb-1">วันที่แก้ไขเสร็จจริง</label>
+                        <input type="date" value={editForm.actualCompletionDate} onChange={(e) => setEditForm({ ...editForm, actualCompletionDate: e.target.value })} className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setEditingRowId(null)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">ยกเลิก</button>
+                    <button onClick={() => saveEdit(f.rowId)} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">บันทึก</button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-slate-800 flex-1">{f.finding}</p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge tone={riskLevelTone(f.riskLevel)}>{riskLevelLabel[f.riskLevel]}</Badge>
+                      <Badge tone={safetyInspectionStatusTone(f.status)}>{f.status}</Badge>
+                    </div>
+                  </div>
+                  {f.correctiveAction !== "-" && <p className="text-sm text-slate-600 mt-1.5">มาตรการแก้ไข: {f.correctiveAction}</p>}
+                  <p className="text-xs text-slate-500 mt-1">
+                    {f.responsiblePerson !== "-" && <>ผู้รับผิดชอบ: {f.responsiblePerson} · </>}
+                    {f.dueDate && <>กำหนดเสร็จ {formatThaiDate(f.dueDate)} · </>}
+                    {f.actualCompletionDate && <>เสร็จจริง {formatThaiDate(f.actualCompletionDate)}</>}
+                  </p>
+                  <div className="flex justify-between items-center mt-2">
+                    <ConfirmDeleteButton onConfirm={() => onDeleteFinding(inspection.id, f.rowId)} />
+                    <button onClick={() => startEdit(f)} className="text-xs bg-slate-900 text-white px-2.5 py-1.5 rounded-lg">อัปเดต</button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          ))}
+          {inspection.findings.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีข้อบกพร่องที่บันทึกไว้</p>}
+        </div>
+      </div>
+
+      <Card>
+        <p className="text-xs font-bold text-slate-600 mb-2">เพิ่มข้อบกพร่องใหม่</p>
+        <textarea rows={2} value={newFinding.finding} onChange={(e) => setNewFinding({ ...newFinding, finding: e.target.value })} placeholder="สิ่งที่พบ (ข้อบกพร่อง)" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none mb-2" />
+        <div className="grid sm:grid-cols-3 gap-2 mb-2">
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความเสี่ยง</label>
+            <select value={newFinding.riskLevel} onChange={(e) => setNewFinding({ ...newFinding, riskLevel: e.target.value })} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+              {inspectionRiskLevelOptions.map((r) => <option key={r} value={r}>{riskLevelLabel[r]}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">ผู้รับผิดชอบแก้ไข</label>
+            <input value={newFinding.responsiblePerson} onChange={(e) => setNewFinding({ ...newFinding, responsiblePerson: e.target.value })} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">กำหนดแล้วเสร็จ</label>
+            <input type="date" value={newFinding.dueDate} onChange={(e) => setNewFinding({ ...newFinding, dueDate: e.target.value })} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+        </div>
+        <textarea rows={2} value={newFinding.correctiveAction} onChange={(e) => setNewFinding({ ...newFinding, correctiveAction: e.target.value })} placeholder="มาตรการแก้ไข" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none mb-2" />
+        <div className="flex justify-end">
+          <button onClick={addFinding} disabled={!newFinding.finding.trim()} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg disabled:opacity-40">
+            <Plus size={15} /> เพิ่มข้อบกพร่อง
+          </button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+
 function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete }) {
   const [showForm, setShowForm] = useState(false);
   const emptyForm = {
@@ -3003,7 +3399,7 @@ function monthDateOptions(count) {
   return out;
 }
 
-function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsertWorkingHours, onDeleteWorkingHours, incidents, employees, chemicals, equipment, machinery, environmentalMeasurements, trainingRecords, trainingCourses, locations }) {
+function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsertWorkingHours, onDeleteWorkingHours, incidents, employees, chemicals, equipment, machinery, environmentalMeasurements, trainingRecords, trainingCourses, locations, safetyInspections }) {
   const [editingOrg, setEditingOrg] = useState(false);
   const [orgForm, setOrgForm] = useState(orgProfile);
   const monthOptions = monthDateOptions(18); // ย้อนหลังได้ถึง 18 เดือน
@@ -3286,10 +3682,35 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
       XLSX.utils.book_append_sheet(workbook, envSheet, "ผลตรวจวัดสภาพแวดล้อม");
     }
 
-    // sheet ที่ยังไม่มีข้อมูลจริงในระบบ (ตรวจความปลอดภัย / ใบอนุญาตทำงานเสี่ยง / กท.16 รายกรณี)
+    // --- ตรวจความปลอดภัย (1 แถวต่อข้อบกพร่อง 1 ข้อ) ---
+    const inspectionRows = [];
+    safetyInspections.forEach((insp) => {
+      if (insp.findings.length === 0) {
+        inspectionRows.push({
+          "เลขที่ตรวจ": insp.inspectionNumber, "วันที่ตรวจ": insp.inspectionDate, "พื้นที่/แผนกที่ตรวจ": insp.areaDepartment,
+          "หัวข้อที่ตรวจ": insp.topic, "สิ่งที่พบ": "-", "ระดับความเสี่ยง": "", "มาตรการแก้ไข": "",
+          "ผู้รับผิดชอบแก้ไข": "", "กำหนดแล้วเสร็จ": "", "สถานะแก้ไข": "", "ผู้ตรวจ": insp.inspectorName,
+        });
+      } else {
+        insp.findings.forEach((f) => {
+          inspectionRows.push({
+            "เลขที่ตรวจ": insp.inspectionNumber, "วันที่ตรวจ": insp.inspectionDate, "พื้นที่/แผนกที่ตรวจ": insp.areaDepartment,
+            "หัวข้อที่ตรวจ": insp.topic, "สิ่งที่พบ": f.finding, "ระดับความเสี่ยง": riskLevelLabel[f.riskLevel] || f.riskLevel,
+            "มาตรการแก้ไข": f.correctiveAction !== "-" ? f.correctiveAction : "", "ผู้รับผิดชอบแก้ไข": f.responsiblePerson !== "-" ? f.responsiblePerson : "",
+            "กำหนดแล้วเสร็จ": f.dueDate || "", "สถานะแก้ไข": f.status, "ผู้ตรวจ": insp.inspectorName,
+          });
+        });
+      }
+    });
+    if (inspectionRows.length > 0) {
+      const inspectionSheet = XLSX.utils.json_to_sheet(inspectionRows);
+      inspectionSheet["!cols"] = Object.keys(inspectionRows[0]).map(() => ({ wch: 20 }));
+      XLSX.utils.book_append_sheet(workbook, inspectionSheet, "ตรวจความปลอดภัย");
+    }
+
+    // sheet ที่ยังไม่มีข้อมูลจริงในระบบ (ใบอนุญาตทำงานเสี่ยง / กท.16 รายกรณี)
     // ใส่แค่หัวคอลัมน์เปล่าไว้กันสับสน พร้อมข้อความอธิบายว่าต้องกรอกเองนอกระบบไปก่อน
     const placeholderSheets = {
-      "ตรวจความปลอดภัย": ["เลขที่ตรวจ", "วันที่ตรวจ", "พื้นที่/แผนกที่ตรวจ", "หัวข้อที่ตรวจ", "สิ่งที่พบ", "ระดับความเสี่ยง", "มาตรการแก้ไข", "ผู้รับผิดชอบแก้ไข", "กำหนดแล้วเสร็จ", "สถานะแก้ไข", "ผู้ตรวจ"],
       "ใบอนุญาตทำงานเสี่ยง": ["เลขที่ใบอนุญาต", "ประเภทงาน", "วันที่/เวลาเริ่ม-สิ้นสุด", "ผู้ปฏิบัติงาน", "ผู้อนุญาต", "รายการตรวจสอบ", "ผลการตรวจสอบ", "สถานะ"],
       "กท16 รายกรณี": ["เลขที่อ้างอิงภายใน", "ชื่อ-นามสกุลผู้ประสบเหตุ", "เลขบัตรประชาชน", "วันที่เกิดเหตุ", "สถานที่เกิดเหตุ", "ลักษณะการประสบอันตราย", "ส่วนของร่างกายที่บาดเจ็บ", "จำนวนวันหยุดงาน", "โรงพยาบาลที่รักษา", "สถานะการยื่น กท.16"],
     };
@@ -6967,6 +7388,7 @@ const NAV = [
   },
   { key: "machinery", label: "ทะเบียนเครื่องจักร", icon: Settings },
   { key: "chemicals", label: "ทะเบียนสารเคมี", icon: FlaskConical },
+  { key: "safetyInspections", label: "บันทึกตรวจความปลอดภัย", icon: Search },
   { key: "govReports", label: "รายงานราชการ", icon: FileText },
 ];
 
@@ -7092,6 +7514,8 @@ export default function JorPorPrototype() {
   const [noncomplianceLoading, setNoncomplianceLoading] = useState(false);
   const [chemicals, setChemicalsData] = useState([]);
   const [chemicalsLoading, setChemicalsLoading] = useState(false);
+  const [safetyInspections, setSafetyInspectionsData] = useState([]);
+  const [safetyInspectionsLoading, setSafetyInspectionsLoading] = useState(false);
   const [workingHours, setWorkingHoursData] = useState([]);
   const [workingHoursLoading, setWorkingHoursLoading] = useState(false);
 
@@ -7585,6 +8009,7 @@ export default function JorPorPrototype() {
       fetchEnvironmentalMeasurements();
       fetchNoncompliance();
       fetchChemicals();
+      fetchSafetyInspections();
       fetchWorkingHours();
     }
   }, [currentUser?.id]);
@@ -7885,6 +8310,178 @@ export default function JorPorPrototype() {
       return;
     }
     setChemicalsData(chemicals.filter((c) => c.id !== id));
+  };
+
+  async function fetchSafetyInspections() {
+    setSafetyInspectionsLoading(true);
+    const { data: inspectionRows, error } = await supabase
+      .from("safety_inspections")
+      .select("id, inspection_number, inspection_date, area_department, topic, inspector_name, inspection_cycle, approver_name, case_closed_date")
+      .order("inspection_date", { ascending: false });
+    if (error) {
+      console.error("fetchSafetyInspections error:", error);
+      alert("โหลดข้อมูลตรวจความปลอดภัยไม่สำเร็จ: " + error.message + " (ตรวจสอบว่ารัน SQL สร้างตารางแล้วหรือยัง)");
+      setSafetyInspectionsLoading(false);
+      return;
+    }
+    const inspectionIds = (inspectionRows || []).map((r) => r.id);
+    let findingsByInspection = {};
+    if (inspectionIds.length > 0) {
+      const { data: findingRows } = await supabase
+        .from("safety_inspection_findings")
+        .select("id, inspection_id, finding, risk_level, photo_before, corrective_action, responsible_person, due_date, status, actual_completion_date, photo_after_or_evidence, is_documentation_fix")
+        .in("inspection_id", inspectionIds);
+      (findingRows || []).forEach((f) => {
+        if (!findingsByInspection[f.inspection_id]) findingsByInspection[f.inspection_id] = [];
+        findingsByInspection[f.inspection_id].push(f);
+      });
+    }
+    setSafetyInspectionsData(
+      (inspectionRows || []).map((r) => mapSafetyInspectionRow(r, findingsByInspection[r.id]))
+    );
+    setSafetyInspectionsLoading(false);
+  }
+
+  // สร้างเลขที่ตรวจแบบรันต่อปี เช่น INS-2569-001 โดยนับจากจำนวนรอบตรวจที่มีอยู่แล้วในปีเดียวกัน
+  function nextInspectionNumber(inspectionDate) {
+    const beYear = new Date(inspectionDate + "T00:00:00").getFullYear() + 543;
+    const countThisYear = safetyInspections.filter((i) => i.inspectionNumber?.includes(`-${beYear}-`)).length;
+    return `INS-${beYear}-${String(countThisYear + 1).padStart(3, "0")}`;
+  }
+
+  const addSafetyInspection = async (form) => {
+    const inspectionNumber = nextInspectionNumber(form.inspectionDate);
+    const { data, error } = await supabase
+      .from("safety_inspections")
+      .insert({
+        organization_id: currentUser.organizationId,
+        inspection_number: inspectionNumber,
+        inspection_date: form.inspectionDate,
+        area_department: form.areaDepartment || null,
+        topic: form.topic || null,
+        inspector_name: form.inspectorName || null,
+        inspection_cycle: form.inspectionCycle || null,
+        approver_name: form.approverName || null,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("บันทึกการตรวจไม่สำเร็จ: " + error.message);
+      return;
+    }
+    let findingRows = [];
+    if (form.findings?.length > 0) {
+      const { data: insertedFindings, error: findingErr } = await supabase
+        .from("safety_inspection_findings")
+        .insert(
+          form.findings.map((f) => ({
+            organization_id: currentUser.organizationId,
+            inspection_id: data.id,
+            finding: f.finding,
+            risk_level: f.riskLevel,
+            photo_before: f.photoBefore || null,
+            corrective_action: f.correctiveAction || null,
+            responsible_person: f.responsiblePerson || null,
+            due_date: f.dueDate || null,
+          }))
+        )
+        .select();
+      if (findingErr) {
+        alert("บันทึกรอบตรวจสำเร็จ แต่บันทึกข้อบกพร่องไม่สำเร็จ: " + findingErr.message + " — เพิ่มใหม่ได้ที่หน้ารายละเอียด");
+      } else {
+        findingRows = insertedFindings || [];
+      }
+    }
+    setSafetyInspectionsData([mapSafetyInspectionRow(data, findingRows), ...safetyInspections]);
+  };
+
+  const updateSafetyInspection = async (id, fields) => {
+    const payload = {};
+    if (fields.areaDepartment !== undefined) payload.area_department = fields.areaDepartment === "-" ? null : fields.areaDepartment;
+    if (fields.topic !== undefined) payload.topic = fields.topic === "-" ? null : fields.topic;
+    if (fields.inspectorName !== undefined) payload.inspector_name = fields.inspectorName === "-" ? null : fields.inspectorName;
+    if (fields.inspectionCycle !== undefined) payload.inspection_cycle = fields.inspectionCycle === "-" ? null : fields.inspectionCycle;
+    if (fields.approverName !== undefined) payload.approver_name = fields.approverName === "-" ? null : fields.approverName;
+    if (fields.caseClosedDate !== undefined) payload.case_closed_date = fields.caseClosedDate || null;
+    const { error } = await supabase.from("safety_inspections").update(payload).eq("id", id);
+    if (error) {
+      alert("บันทึกการแก้ไขไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setSafetyInspectionsData(safetyInspections.map((i) => (i.id === id ? { ...i, ...fields } : i)));
+  };
+
+  const deleteSafetyInspection = async (id) => {
+    const { error } = await supabase.from("safety_inspections").delete().eq("id", id);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setSafetyInspectionsData(safetyInspections.filter((i) => i.id !== id));
+  };
+
+  const addSafetyInspectionFinding = async (inspectionId, f) => {
+    const { data, error } = await supabase
+      .from("safety_inspection_findings")
+      .insert({
+        organization_id: currentUser.organizationId,
+        inspection_id: inspectionId,
+        finding: f.finding,
+        risk_level: f.riskLevel,
+        photo_before: f.photoBefore || null,
+        corrective_action: f.correctiveAction || null,
+        responsible_person: f.responsiblePerson || null,
+        due_date: f.dueDate || null,
+      })
+      .select()
+      .single();
+    if (error) {
+      alert("เพิ่มข้อบกพร่องไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setSafetyInspectionsData(
+      safetyInspections.map((i) =>
+        i.id === inspectionId ? { ...i, findings: [...i.findings, mapSafetyInspectionFindingRow(data)] } : i
+      )
+    );
+  };
+
+  // อัปเดตข้อบกพร่อง 1 รายการ — บังคับให้มีภาพถ่ายหลังแก้ไข/หลักฐานก่อนเปลี่ยนเป็น "ปิดเคสแล้ว"
+  // เว้นแต่เป็นการแก้ไขเชิงเอกสาร/นโยบาย (ตามเงื่อนไขในแบบฟอร์มต้นฉบับ)
+  const updateSafetyInspectionFinding = async (inspectionId, rowId, fields) => {
+    const payload = {};
+    if (fields.correctiveAction !== undefined) payload.corrective_action = fields.correctiveAction === "-" ? null : fields.correctiveAction;
+    if (fields.responsiblePerson !== undefined) payload.responsible_person = fields.responsiblePerson === "-" ? null : fields.responsiblePerson;
+    if (fields.dueDate !== undefined) payload.due_date = fields.dueDate || null;
+    if (fields.status !== undefined) payload.status = safetyInspectionStatusOptions.find((k) => safetyInspectionStatusLabel[k] === fields.status) || "open";
+    if (fields.actualCompletionDate !== undefined) payload.actual_completion_date = fields.actualCompletionDate || null;
+    if (fields.photoAfterOrEvidence !== undefined) payload.photo_after_or_evidence = fields.photoAfterOrEvidence === "-" ? null : fields.photoAfterOrEvidence;
+    if (fields.isDocumentationFix !== undefined) payload.is_documentation_fix = fields.isDocumentationFix;
+    const { error } = await supabase.from("safety_inspection_findings").update(payload).eq("id", rowId);
+    if (error) {
+      alert("บันทึกไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setSafetyInspectionsData(
+      safetyInspections.map((i) =>
+        i.id === inspectionId
+          ? { ...i, findings: i.findings.map((f) => (f.rowId === rowId ? { ...f, ...fields } : f)) }
+          : i
+      )
+    );
+  };
+
+  const deleteSafetyInspectionFinding = async (inspectionId, rowId) => {
+    const { error } = await supabase.from("safety_inspection_findings").delete().eq("id", rowId);
+    if (error) {
+      alert("ลบไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setSafetyInspectionsData(
+      safetyInspections.map((i) =>
+        i.id === inspectionId ? { ...i, findings: i.findings.filter((f) => f.rowId !== rowId) } : i
+      )
+    );
   };
 
   // อัปเดตข้อมูลองค์กร/คปอ. (ใช้ตาราง organizations ที่มีอยู่แล้ว + คอลัมน์ใหม่ที่เพิ่งเพิ่ม)
@@ -8686,6 +9283,17 @@ export default function JorPorPrototype() {
         {page === "chemicals" && (
           <ChemicalsPage chemicals={chemicals} currentUserName={currentUser.name} onAdd={addChemical} onDelete={deleteChemical} />
         )}
+        {page === "safetyInspections" && (
+          <SafetyInspectionsPage
+            inspections={safetyInspections}
+            onAdd={addSafetyInspection}
+            onUpdate={updateSafetyInspection}
+            onDelete={deleteSafetyInspection}
+            onAddFinding={addSafetyInspectionFinding}
+            onUpdateFinding={updateSafetyInspectionFinding}
+            onDeleteFinding={deleteSafetyInspectionFinding}
+          />
+        )}
         {page === "govReports" && (
           <GovReportsPage
             orgProfile={currentUser.orgProfile}
@@ -8702,6 +9310,7 @@ export default function JorPorPrototype() {
             trainingRecords={trainingRecords}
             trainingCourses={trainingCourses}
             locations={locations}
+            safetyInspections={safetyInspections}
           />
         )}
         {page === "equipment" && (
