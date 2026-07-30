@@ -142,7 +142,7 @@ const PAGE_OPTIONS = [
   { key: "locations", label: "สถานที่ทำงาน" },
   { key: "ppe", label: "PPE" },
   { key: "equipment", label: "อุปกรณ์ความปลอดภัย" },
-  { key: "machinery", label: "เครื่องจักร" },
+  { key: "machinery", label: "ทะเบียนเครื่องจักร" },
   { key: "chemicals", label: "ทะเบียนสารเคมี" },
   { key: "govReports", label: "รายงานราชการ" },
 ];
@@ -6840,9 +6840,9 @@ const NAV = [
     items: [
       { key: "ppe", label: "PPE", icon: HardHat },
       { key: "equipment", label: "อุปกรณ์ความปลอดภัย", icon: Wrench },
-      { key: "machinery", label: "เครื่องจักร", icon: Settings },
     ],
   },
+  { key: "machinery", label: "ทะเบียนเครื่องจักร", icon: Settings },
   { key: "chemicals", label: "ทะเบียนสารเคมี", icon: FlaskConical },
   { key: "govReports", label: "รายงานราชการ", icon: FileText },
 ];
