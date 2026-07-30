@@ -311,7 +311,7 @@ function mapSafetyInspectionRow(row, findingRows) {
     inspectionDate: row.inspection_date ? row.inspection_date.slice(0, 10) : "",
     areaDepartment: row.area_department || "-",
     locationId: row.location_id || null,
-    topic: row.topic || [],
+    topic: Array.isArray(row.topic) ? row.topic : (row.topic ? [row.topic] : []),
     inspectorName: row.inspector_name || "-",
     inspectionCycle: row.inspection_cycle || "-",
     approverName: row.approver_name || "-",
@@ -1259,6 +1259,7 @@ function FileLinkPreview({ path, label }) {
 function Dashboard({
   incidents, ppe, equipment, locations, noncompliance, environmentalMeasurements,
   employees, trainingRequirements, trainingRecords, trainingCourses, ltiBaselineDate, onSetLtiBaselineDate, currentUser,
+  safetyInspections,
 }) {
   const equipmentAttention = equipment.filter((e) => e.status !== "ปกติ").length;
   const ppeSoon = ppe.filter((p) => daysUntil(p.expiry) <= 30).length;
@@ -1268,6 +1269,13 @@ function Dashboard({
   const envFailingMeasurements = [...environmentalMeasurements]
     .filter((m) => m.result === "fail")
     .sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
+
+  // ไล่ทุกรอบตรวจความปลอดภัยพื้นที่ แล้วดึงเฉพาะข้อบกพร่องที่ยังไม่ปิดเคส มาแสดงเป็นภาพรวมเดียว
+  const openInspectionFindings = safetyInspections.flatMap((insp) =>
+    insp.findings
+      .filter((f) => f.status !== "ปิดเคสแล้ว")
+      .map((f) => ({ ...f, inspectionNumber: insp.inspectionNumber, area: safetyInspectionAreaLabel(insp, locations) }))
+  );
 
   // นับหลักสูตรที่พนักงานแต่ละคน "ยังไม่ผ่าน" หรือ "หมดอายุ" เทียบกับ Training Matrix
   const trainingGaps = [];
@@ -1315,6 +1323,7 @@ function Dashboard({
         <DashboardMetricCard label="อุปกรณ์ต้องเฝ้าระวัง" value={equipmentAttention} icon={Wrench} tone="red" />
         <DashboardMetricCard label="หลักสูตรยังไม่ผ่าน" value={trainingGaps.length} icon={GraduationCap} tone="amber" />
         <DashboardMetricCard label="การกระทำไม่ปลอดภัยใน 30 วัน" value={noncompliance30d} icon={ShieldAlert} tone="slate" />
+        <DashboardMetricCard label="ข้อบกพร่องจากการตรวจพื้นที่ที่ยังไม่ปิด" value={openInspectionFindings.length} icon={Search} tone="red" />
       </div>
 
       <Card className="!p-3">
@@ -1410,6 +1419,22 @@ function Dashboard({
               </div>
             ))}
             {noncompliance.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีบันทึกการไม่ปฏิบัติตาม</p>}
+          </div>
+        </Card>
+
+        <Card>
+          <p className="text-sm font-bold text-slate-900 mb-3">ข้อบกพร่องจากการตรวจพื้นที่ที่ยังไม่ปิด</p>
+          <div className="space-y-3">
+            {openInspectionFindings.slice(0, 3).map((f) => (
+              <div key={f.rowId} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                <div>
+                  <p className="text-sm text-slate-800">{f.finding}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{f.inspectionNumber} · {f.area}</p>
+                </div>
+                <Badge tone={riskLevelTone(f.riskLevel)}>{riskLevelLabel[f.riskLevel]}</Badge>
+              </div>
+            ))}
+            {openInspectionFindings.length === 0 && <p className="text-sm text-slate-400">ไม่มีข้อบกพร่องค้างอยู่ ปิดเคสครบแล้ว</p>}
           </div>
         </Card>
       </div>
@@ -3221,7 +3246,7 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
   );
 }
 
-function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId }) {
+function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations }) {
   const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   const [editingRowId, setEditingRowId] = useState(null);
   const [editForm, setEditForm] = useState(null);
@@ -9536,6 +9561,7 @@ export default function JorPorPrototype() {
             ltiBaselineDate={ltiBaselineDate}
             onSetLtiBaselineDate={setLtiBaselineDate}
             currentUser={currentUser}
+            safetyInspections={safetyInspections}
           />
         )}
         {page === "incidents" && (
