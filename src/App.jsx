@@ -1276,6 +1276,24 @@ function BannerImage({ path, className }) {
   return <img src={url} alt="แบนเนอร์" className={className} />;
 }
 
+// แสดงรูปแบบฝังจริง เฉพาะตอนพิมพ์/export PDF เท่านั้น (หน้าจอปกติไม่โชว์ ใช้ FileLinkPreview แทน
+// เพื่อประหยัดพื้นที่) — ใช้กับภาพก่อน/หลังแก้ไขในเอกสารตรวจความปลอดภัยที่พิมพ์เก็บไว้
+function PrintableImage({ path, label }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    getSignedFileUrl(path).then((u) => { if (!cancelled) setUrl(u); });
+    return () => { cancelled = true; };
+  }, [path]);
+  if (!url) return null;
+  return (
+    <div className="hidden print:block mt-2">
+      <p className="text-xs font-bold mb-1">{label}</p>
+      <img src={url} alt={label} className="max-w-full max-h-64 rounded border border-slate-300" />
+    </div>
+  );
+}
+
 
 // ---------------------------------------------------------------
 // Dashboard
@@ -3321,10 +3339,21 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
   };
 
   return (
-    <div className="space-y-5">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={16} /> กลับไปทะเบียนการตรวจ
-      </button>
+    <div className="space-y-5 print:space-y-3">
+      <div className="flex items-center justify-between print:hidden">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
+          <ArrowLeft size={16} /> กลับไปทะเบียนการตรวจ
+        </button>
+        <button onClick={() => window.print()} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
+          Export เป็น PDF / พิมพ์
+        </button>
+      </div>
+
+      {/* หัวกระดาษสำหรับพิมพ์เท่านั้น */}
+      <div className="hidden print:block text-center mb-2">
+        <p className="font-bold text-base">บันทึกการตรวจความปลอดภัย</p>
+        <p className="text-sm text-slate-500">{inspection.inspectionNumber}</p>
+      </div>
 
       <div>
         <h1 className="text-lg font-bold text-slate-900">{inspection.inspectionNumber}</h1>
@@ -3340,7 +3369,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
           {inspection.findings.map((f) => (
             <Card key={f.rowId}>
               {editingRowId === f.rowId ? (
-                <div className="space-y-3">
+                <div className="space-y-3 print:hidden">
                   <p className="text-sm text-slate-800">{f.finding}</p>
                   <div className="grid sm:grid-cols-2 gap-3">
                     <div>
@@ -3407,11 +3436,15 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
                     {f.dueDate && <>กำหนดเสร็จ {formatThaiDate(f.dueDate)} · </>}
                     {f.actualCompletionDate && <>เสร็จจริง {formatThaiDate(f.actualCompletionDate)}</>}
                   </p>
-                  <div className="flex gap-3 mt-1.5">
+                  <div className="flex gap-3 mt-1.5 print:hidden">
                     {f.photoBefore !== "-" && <FileLinkPreview path={f.photoBefore} label="ภาพก่อนแก้ไข" />}
                     {f.photoAfterOrEvidence !== "-" && <FileLinkPreview path={f.photoAfterOrEvidence} label={f.isDocumentationFix ? "หลักฐานอื่น" : "ภาพหลังแก้ไข"} />}
                   </div>
-                  <div className="flex justify-between items-center mt-2">
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {f.photoBefore !== "-" && <PrintableImage path={f.photoBefore} label="ภาพก่อนแก้ไข" />}
+                    {f.photoAfterOrEvidence !== "-" && <PrintableImage path={f.photoAfterOrEvidence} label={f.isDocumentationFix ? "หลักฐานอื่น" : "ภาพหลังแก้ไข"} />}
+                  </div>
+                  <div className="flex justify-between items-center mt-2 print:hidden">
                     <ConfirmDeleteButton onConfirm={() => onDeleteFinding(inspection.id, f.rowId)} />
                     <button onClick={() => startEdit(f)} className="text-xs bg-slate-900 text-white px-2.5 py-1.5 rounded-lg">อัปเดต</button>
                   </div>
@@ -3423,7 +3456,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
         </div>
       </div>
 
-      <Card>
+      <Card className="print:hidden">
         <p className="text-xs font-bold text-slate-600 mb-2">เพิ่มข้อบกพร่องใหม่</p>
         <textarea rows={2} value={newFinding.finding} onChange={(e) => setNewFinding({ ...newFinding, finding: e.target.value })} placeholder="สิ่งที่พบ (ข้อบกพร่อง)" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none mb-2" />
         <div className="grid sm:grid-cols-3 gap-2 mb-2">
@@ -3458,6 +3491,20 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
           </button>
         </div>
       </Card>
+
+      {/* ส่วนลงชื่อสำหรับเอกสารที่พิมพ์เก็บไว้เท่านั้น */}
+      <div className="hidden print:grid print:grid-cols-2 gap-8 mt-6 pt-4 border-t border-slate-300">
+        <div>
+          <p className="text-sm">ผู้ตรวจ: {inspection.inspectorName}</p>
+          <div className="mt-8 border-t border-slate-400 pt-1 text-xs text-slate-500">ลงชื่อผู้ตรวจ</div>
+        </div>
+        <div>
+          <p className="text-sm">จป. ผู้ตรวจสอบ/ปิดเคส: {inspection.approverName}</p>
+          <div className="mt-8 border-t border-slate-400 pt-1 text-xs text-slate-500">
+            ลงชื่อ จป. ผู้ตรวจสอบ/ปิดเคส {inspection.caseClosedDate ? `· วันที่ปิดเคส ${formatThaiDate(inspection.caseClosedDate)}` : ""}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
