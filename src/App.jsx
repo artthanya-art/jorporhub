@@ -3308,6 +3308,14 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
   const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   const [editingRowId, setEditingRowId] = useState(null);
   const [editForm, setEditForm] = useState(null);
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [numberDraft, setNumberDraft] = useState(inspection.inspectionNumber);
+
+  const saveNumber = () => {
+    if (!numberDraft.trim()) return;
+    onUpdate(inspection.id, { inspectionNumber: numberDraft.trim() });
+    setEditingNumber(false);
+  };
 
   const startEdit = (f) => {
     setEditingRowId(f.rowId);
@@ -3357,7 +3365,22 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
       </div>
 
       <div>
-        <h1 className="text-lg font-bold text-slate-900">{inspection.inspectionNumber}</h1>
+        {editingNumber ? (
+          <div className="flex items-center gap-2 print:hidden">
+            <input
+              value={numberDraft}
+              onChange={(e) => setNumberDraft(e.target.value)}
+              className="text-lg font-bold text-slate-900 border border-slate-300 rounded-lg px-2 py-1 w-48"
+            />
+            <button onClick={saveNumber} className="text-xs bg-slate-900 text-white px-2.5 py-1.5 rounded-lg">บันทึก</button>
+            <button onClick={() => { setEditingNumber(false); setNumberDraft(inspection.inspectionNumber); }} className="text-xs text-slate-500 underline">ยกเลิก</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-bold text-slate-900">{inspection.inspectionNumber}</h1>
+            <button onClick={() => setEditingNumber(true)} className="text-xs text-slate-400 underline hover:text-slate-700 print:hidden">แก้ไข</button>
+          </div>
+        )}
         <p className="text-sm text-slate-500 mt-0.5">
           {formatThaiDate(inspection.inspectionDate)} · {safetyInspectionAreaLabel(inspection, locations)} · {inspection.topic.join(", ") || "-"}
         </p>
@@ -8930,6 +8953,7 @@ export default function JorPorPrototype() {
     if (fields.inspectionCycle !== undefined) payload.inspection_cycle = fields.inspectionCycle === "-" ? null : fields.inspectionCycle;
     if (fields.approverName !== undefined) payload.approver_name = fields.approverName === "-" ? null : fields.approverName;
     if (fields.caseClosedDate !== undefined) payload.case_closed_date = fields.caseClosedDate || null;
+    if (fields.inspectionNumber !== undefined) payload.inspection_number = fields.inspectionNumber;
     const { error } = await supabase.from("safety_inspections").update(payload).eq("id", id);
     if (error) {
       alert("บันทึกการแก้ไขไม่สำเร็จ: " + error.message);
