@@ -3317,6 +3317,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
       dueDate: f.dueDate || "",
       status: f.status,
       actualCompletionDate: f.actualCompletionDate || "",
+      photoBefore: f.photoBefore === "-" ? null : f.photoBefore,
       photoAfterOrEvidence: f.photoAfterOrEvidence === "-" ? null : f.photoAfterOrEvidence,
       isDocumentationFix: f.isDocumentationFix,
     });
@@ -3392,6 +3393,16 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
                         {safetyInspectionStatusOptions.map((s) => <option key={s} value={safetyInspectionStatusLabel[s]}>{safetyInspectionStatusLabel[s]}</option>)}
                       </select>
                     </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-1">ภาพก่อนแก้ไข (เพิ่ม/แก้ไขได้ถ้ายังไม่เคยแนบ)</label>
+                    <FileUploadField
+                      value={editForm.photoBefore}
+                      onChange={(path) => setEditForm({ ...editForm, photoBefore: path })}
+                      organizationId={organizationId}
+                      folder="safety-inspections"
+                      kind="image"
+                    />
                   </div>
                   {editForm.status === "ปิดเคสแล้ว" && (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
@@ -8972,6 +8983,7 @@ export default function JorPorPrototype() {
     if (fields.status !== undefined) payload.status = safetyInspectionStatusOptions.find((k) => safetyInspectionStatusLabel[k] === fields.status) || "open";
     if (fields.actualCompletionDate !== undefined) payload.actual_completion_date = fields.actualCompletionDate || null;
     if (fields.photoAfterOrEvidence !== undefined) payload.photo_after_or_evidence = fields.photoAfterOrEvidence === "-" ? null : fields.photoAfterOrEvidence;
+    if (fields.photoBefore !== undefined) payload.photo_before = fields.photoBefore === "-" ? null : fields.photoBefore;
     if (fields.isDocumentationFix !== undefined) payload.is_documentation_fix = fields.isDocumentationFix;
     const { error } = await supabase.from("safety_inspection_findings").update(payload).eq("id", rowId);
     if (error) {
