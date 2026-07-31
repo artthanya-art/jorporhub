@@ -1361,6 +1361,11 @@ function Dashboard({
         )}
       </div>
 
+      {/* กล่องสำรองไว้สำหรับใส่แบนเนอร์ในอนาคต (เช่น ประกาศ/โปรโมชัน) ตอนนี้ยังไม่มีเนื้อหาจริง */}
+      <div className="border border-dashed border-slate-300 rounded-lg py-8 flex items-center justify-center text-slate-300 text-sm">
+        พื้นที่สำหรับแบนเนอร์ (เร็วๆ นี้)
+      </div>
+
       <div className="grid sm:grid-cols-2 gap-4">
         <Card>
           <p className="text-sm font-bold text-slate-900 mb-3">อุบัติเหตุล่าสุด</p>
@@ -7691,7 +7696,7 @@ function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpe
 
   return (
     <div className="flex flex-col h-full">
-      <p className="font-semibold text-slate-900 px-2 py-2 text-[15px]">JorPor</p>
+      <img src="/logo.jpg" alt="JorPorHub" className="h-9 w-auto px-2 py-2 object-contain object-left" />
       <nav className="space-y-1 mt-1 flex-1">
         {NAV.map((item, idx) => {
           if (item.type === "divider") {
@@ -8441,7 +8446,10 @@ export default function JorPorPrototype() {
     return (
       <div className="min-h-[600px] bg-white font-sans">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-200">
-          <p className="font-semibold text-slate-900 text-[15px]">JorPor · ผู้ดูแลระบบ</p>
+          <div className="flex items-center gap-2">
+            <img src="/logo.jpg" alt="JorPorHub" className="h-7 w-auto object-contain" />
+            <p className="font-semibold text-slate-900 text-[15px]">· ผู้ดูแลระบบ</p>
+          </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-slate-500">{currentUser.name}</span>
             <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
@@ -9485,7 +9493,7 @@ export default function JorPorPrototype() {
     <div className="min-h-[600px] bg-white font-sans sm:flex sm:items-start">
       {/* แถบบนสุดสำหรับมือถือ — มีปุ่มเปิดเมนู */}
       <div className="sm:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200 print:hidden">
-        <p className="font-semibold text-slate-900 text-[15px]">JorPor</p>
+        <img src="/logo.jpg" alt="JorPorHub" className="h-8 w-auto object-contain" />
         <button
           onClick={() => setMobileMenuOpen(true)}
           aria-label="เปิดเมนู"
