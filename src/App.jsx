@@ -3847,31 +3847,19 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
       key: `${year}-Q${quarterNum}`, year, quarterNum, monthDates, monthEntries, readyMonths,
       isComplete: readyMonths === 3, isCurrent, totalHours, avgEmployeeCount,
       incidentCount: incidentsInQuarter.length, ltiCount: ltiIncidents.length, totalLostDays, ifr, isr,
+      quarterStart, quarterEnd,
     };
   });
 
   const exportQuarter = async (q) => {
-    const XLSX = await import("xlsx");
-    const row = {
-      "ไตรมาส/ปี": `Q${q.quarterNum}/${q.year + 543} (${thaiMonths[(q.quarterNum - 1) * 3]}-${thaiMonths[(q.quarterNum - 1) * 3 + 2]})`,
-      "จำนวนลูกจ้างเฉลี่ย": q.avgEmployeeCount ?? "",
-      "ชั่วโมงทำงานรวม": q.totalHours || "",
-      "จำนวนอุบัติเหตุถึงขั้นหยุดงาน": q.ltiCount,
-      "จำนวนวันหยุดงานรวม": q.totalLostDays,
-      "IFR (อัตราความถี่)": q.ifr ?? "",
-      "ISR (อัตราความรุนแรง)": q.isr ?? "",
-      "จำนวนอุบัติเหตุที่ต้องแจ้ง กท.16": "", // ระบบยังไม่มีการทำเครื่องหมายนี้ ให้ จป. กรอกเองก่อนยื่นจริง
-      "หมายเหตุ": !q.isComplete ? `กรอกชั่วโมงทำงานไม่ครบ (${q.readyMonths}/3 เดือน) ตัวเลขนี้อาจไม่แม่นยำ` : "",
-    };
-    const worksheet = XLSX.utils.json_to_sheet([row]);
-    worksheet["!cols"] = Object.keys(row).map(() => ({ wch: 22 }));
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "สถิติอุบัติเหตุรายไตรมาส");
-    XLSX.writeFile(workbook, `สถิติอุบัติเหตุ_Q${q.quarterNum}_${q.year + 543}.xlsx`);
+    await buildAndDownloadReport(
+      { start: q.quarterStart, end: q.quarterEnd },
+      `รายงานราชการ_Q${q.quarterNum}_${q.year + 543}.xlsx`
+    );
   };
 
   // รวมทุก sheet ที่มีข้อมูลจริงพร้อมอยู่แล้วไว้ในไฟล์เดียว — sheet ที่ระบบยังไม่มีฟีเจอร์รองรับ
-  // (ตรวจความปลอดภัย, ใบอนุญาตทำงานเสี่ยง, กท.16 รายกรณี) จะไม่ถูกสร้างในไฟล์นี้ เพราะยังไม่มี
+  // (ใบอนุญาตทำงานเสี่ยง, กท.16 รายกรณี) จะไม่ถูกสร้างในไฟล์นี้ เพราะยังไม่มี
   // ข้อมูลจริงให้ใส่ — ใส่แค่ sheet เปล่าพร้อมหัวคอลัมน์ไว้แทน กันสับสนว่าไฟล์หายไปไหน
   const employeeName = (id) => employees.find((e) => e.id === id)?.name ?? "-";
   const employeePosition = (id) => employees.find((e) => e.id === id)?.position ?? "-";
@@ -3879,11 +3867,16 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
   const courseName = (id) => trainingCourses.find((c) => c.id === id)?.name ?? "-";
   const courseCategory = (id) => trainingCourses.find((c) => c.id === id)?.category ?? "-";
 
-  const exportFullReport = async () => {
+  // dateRange = { start, end } (สตริงวันที่ ISO) หรือ null = ไม่กรองช่วงวันที่ (export ทั้งหมดทุกช่วงเวลา)
+  // เมื่อมีการกรองช่วงวันที่ (เช่น export รายไตรมาส) sheet เครื่องจักร/อุปกรณ์ความปลอดภัยจะเปลี่ยนจาก
+  // "1 แถวต่อชิ้น แสดงสถานะล่าสุด" เป็น "1 แถวต่อการตรวจ 1 ครั้งที่เกิดขึ้นในช่วงนั้น" แทน เพื่อให้ตรงกับ
+  // ความหมายของรายงานตามช่วงเวลาจริงๆ (แสดงเฉพาะเหตุการณ์ที่เกิดในไตรมาสนั้น ไม่ใช่ทะเบียนทรัพย์สินทั้งหมด)
+  const buildAndDownloadReport = async (dateRange, filename) => {
     const XLSX = await import("xlsx");
     const workbook = XLSX.utils.book_new();
+    const inRange = (dateStr) => !dateRange || (dateStr && dateStr >= dateRange.start && dateStr <= dateRange.end);
 
-    // --- ข้อมูลองค์กร-คปอ. ---
+    // --- ข้อมูลองค์กร-คปอ. (ไม่ผูกกับช่วงเวลา แสดงข้อมูลปัจจุบันเสมอ) ---
     const orgRows = [
       ["ชื่อสถานประกอบการ", orgProfile.name || ""],
       ["เลขทะเบียนนิติบุคคล", orgProfile.taxId || ""],
@@ -3903,7 +3896,7 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
     orgSheet["!cols"] = [{ wch: 32 }, { wch: 45 }];
     XLSX.utils.book_append_sheet(workbook, orgSheet, "ข้อมูลองค์กร-คปอ");
 
-    // --- สถิติอุบัติเหตุรายไตรมาส (ทั้ง 4 ไตรมาสล่าสุด) ---
+    // --- สถิติอุบัติเหตุรายไตรมาส (ไม่กรองช่วงวันที่ — โชว์ 4 ไตรมาสล่าสุดเทียบกันเสมอ) ---
     const statsRows = quarters.map((q) => ({
       "ไตรมาส/ปี": `Q${q.quarterNum}/${q.year + 543} (${thaiMonths[(q.quarterNum - 1) * 3]}-${thaiMonths[(q.quarterNum - 1) * 3 + 2]})`,
       "จำนวนลูกจ้างเฉลี่ย": q.avgEmployeeCount ?? "",
@@ -3920,7 +3913,8 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
     XLSX.utils.book_append_sheet(workbook, statsSheet, "สถิติอุบัติเหตุรายไตรมาส");
 
     // --- บันทึกอุบัติเหตุ (1 แถวต่อ 1 พนักงานบาดเจ็บ ถ้าไม่มีใครบาดเจ็บ = 1 แถวต่อเคส) ---
-    const sortedIncidents = [...incidents].sort((a, b) => (a.incidentDate < b.incidentDate ? -1 : 1));
+    const scopedIncidents = incidents.filter((inc) => inRange(inc.incidentDate));
+    const sortedIncidents = [...scopedIncidents].sort((a, b) => (a.incidentDate < b.incidentDate ? -1 : 1));
     const incidentRows = [];
     sortedIncidents.forEach((inc, idx) => {
       const caseNo = `ACC-${inc.incidentDate?.slice(0, 4) || "0000"}-${String(idx + 1).padStart(3, "0")}`;
@@ -3961,9 +3955,10 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
       XLSX.utils.book_append_sheet(workbook, incidentSheet, "บันทึกอุบัติเหตุ");
     }
 
-    // --- ทะเบียนสารเคมี ---
-    if (chemicals.length > 0) {
-      const chemRows = chemicals.map((c, idx) => ({
+    // --- ทะเบียนสารเคมี (กรองตามวันที่บันทึกถ้ามีการระบุช่วงเวลา) ---
+    const scopedChemicals = chemicals.filter((c) => inRange(c.recordedDate));
+    if (scopedChemicals.length > 0) {
+      const chemRows = scopedChemicals.map((c, idx) => ({
         "ลำดับ": idx + 1,
         "ชื่อสารเคมี": c.name,
         "CAS No.": c.casNumber !== "-" ? c.casNumber : "",
@@ -3980,9 +3975,10 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
       XLSX.utils.book_append_sheet(workbook, chemSheet, "ทะเบียนสารเคมี");
     }
 
-    // --- บันทึกการฝึกอบรม ---
-    if (trainingRecords.length > 0) {
-      const trainingRows = trainingRecords.map((r) => {
+    // --- บันทึกการฝึกอบรม (กรองตามวันที่อบรมถ้ามีการระบุช่วงเวลา) ---
+    const scopedTrainingRecords = trainingRecords.filter((r) => inRange(r.completionDate));
+    if (scopedTrainingRecords.length > 0) {
+      const trainingRows = scopedTrainingRecords.map((r) => {
         const emp = employees.find((e) => e.id === r.employeeId);
         return {
           "รหัสพนักงาน": emp?.code ?? "-",
@@ -4005,54 +4001,80 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
       XLSX.utils.book_append_sheet(workbook, trainingSheet, "บันทึกการฝึกอบรม");
     }
 
-    // --- ทะเบียนเครื่องจักร (ที่ต้องมีวิศวกรตรวจรับรอง) ---
-    if (machinery.length > 0) {
-      const machineryRows = machinery.map((m) => {
-        const latest = m.history[0];
-        return {
-          "รหัสอุปกรณ์": m.code,
-          "ชื่อเครื่องจักร": m.name,
-          "ประเภท": m.name,
-          "สถานที่ติดตั้ง/ใช้งาน": m.location,
-          "รอบตรวจสอบ (เดือน)": m.frequencyMonths,
-          "วันที่ตรวจครั้งล่าสุด": m.lastDate !== "-" ? m.lastDate : "",
-          "ผลการตรวจ": latest ? latest.result : "",
-          "วันที่ครบกำหนดตรวจครั้งถัดไป": m.nextDate !== "-" ? m.nextDate : "",
-          "ผู้ตรวจสอบ/วิศวกรที่รับรอง": latest ? latest.engineerName : "",
-          "เลขที่ใบอนุญาตวิศวกร": latest ? latest.engineerLicenseNumber : "",
-          "เลขที่ใบรับรอง": latest ? latest.certificateNumber : "",
-          "สถานะการใช้งาน": m.status,
-        };
+    // --- ทะเบียนเครื่องจักร ---
+    // ไม่กรองช่วงเวลา (dateRange = null): แสดงทะเบียนทั้งหมด 1 แถวต่อเครื่องจักร 1 ชิ้น (สถานะล่าสุด)
+    // กรองช่วงเวลา (export รายไตรมาส): เปลี่ยนเป็น 1 แถวต่อ "การตรวจ 1 ครั้ง" ที่เกิดขึ้นในไตรมาสนั้นแทน
+    if (!dateRange) {
+      if (machinery.length > 0) {
+        const machineryRows = machinery.map((m) => {
+          const latest = m.history[0];
+          return {
+            "รหัสอุปกรณ์": m.code, "ชื่อเครื่องจักร": m.name, "ประเภท": m.name, "สถานที่ติดตั้ง/ใช้งาน": m.location,
+            "รอบตรวจสอบ (เดือน)": m.frequencyMonths, "วันที่ตรวจครั้งล่าสุด": m.lastDate !== "-" ? m.lastDate : "",
+            "ผลการตรวจ": latest ? latest.result : "", "วันที่ครบกำหนดตรวจครั้งถัดไป": m.nextDate !== "-" ? m.nextDate : "",
+            "ผู้ตรวจสอบ/วิศวกรที่รับรอง": latest ? latest.engineerName : "", "เลขที่ใบอนุญาตวิศวกร": latest ? latest.engineerLicenseNumber : "",
+            "เลขที่ใบรับรอง": latest ? latest.certificateNumber : "", "สถานะการใช้งาน": m.status,
+          };
+        });
+        const machinerySheet = XLSX.utils.json_to_sheet(machineryRows);
+        machinerySheet["!cols"] = Object.keys(machineryRows[0]).map(() => ({ wch: 20 }));
+        XLSX.utils.book_append_sheet(workbook, machinerySheet, "ทะเบียนเครื่องจักรอุปกรณ์");
+      }
+    } else {
+      const machineryEventRows = [];
+      machinery.forEach((m) => {
+        m.history.filter((h) => inRange(h.date)).forEach((h) => {
+          machineryEventRows.push({
+            "รหัสอุปกรณ์": m.code, "ชื่อเครื่องจักร": m.name, "สถานที่ติดตั้ง/ใช้งาน": m.location,
+            "วันที่ตรวจ": h.date, "ผลการตรวจ": h.result, "ผู้ตรวจสอบ/วิศวกรที่รับรอง": h.engineerName,
+            "เลขที่ใบอนุญาตวิศวกร": h.engineerLicenseNumber, "เลขที่ใบรับรอง": h.certificateNumber,
+          });
+        });
       });
-      const machinerySheet = XLSX.utils.json_to_sheet(machineryRows);
-      machinerySheet["!cols"] = Object.keys(machineryRows[0]).map(() => ({ wch: 20 }));
-      XLSX.utils.book_append_sheet(workbook, machinerySheet, "ทะเบียนเครื่องจักรอุปกรณ์");
+      if (machineryEventRows.length > 0) {
+        const machinerySheet = XLSX.utils.json_to_sheet(machineryEventRows);
+        machinerySheet["!cols"] = Object.keys(machineryEventRows[0]).map(() => ({ wch: 20 }));
+        XLSX.utils.book_append_sheet(workbook, machinerySheet, "ทะเบียนเครื่องจักรอุปกรณ์");
+      }
     }
 
     // --- ทะเบียนอุปกรณ์ความปลอดภัย (เพิ่มเติมนอกเทมเพลต แต่มีข้อมูลจริงพร้อมอยู่แล้ว) ---
-    if (equipment.length > 0) {
-      const equipmentRows = equipment.map((eq) => {
-        const latest = eq.history[0];
-        return {
-          "รหัสอุปกรณ์": eq.code,
-          "ชื่ออุปกรณ์": eq.name,
-          "สถานที่ติดตั้ง/ใช้งาน": eq.location,
-          "รอบตรวจสอบ": eq.frequency,
-          "วันที่ตรวจครั้งล่าสุด": eq.lastDate !== "-" ? eq.lastDate : "",
-          "ผลการตรวจ": latest ? latest.result : "",
-          "วันครบกำหนดตรวจครั้งถัดไป": eq.nextDate !== "-" ? eq.nextDate : "",
-          "ผู้ตรวจ": latest ? latest.inspector : "",
-          "สถานะ": eq.status,
-        };
+    // ใช้แพทเทิร์นเดียวกับเครื่องจักรด้านบน: ไม่กรอง = สแนปช็อตปัจจุบันทั้งทะเบียน, กรอง = เฉพาะเหตุการณ์ตรวจในช่วงนั้น
+    if (!dateRange) {
+      if (equipment.length > 0) {
+        const equipmentRows = equipment.map((eq) => {
+          const latest = eq.history[0];
+          return {
+            "รหัสอุปกรณ์": eq.code, "ชื่ออุปกรณ์": eq.name, "สถานที่ติดตั้ง/ใช้งาน": eq.location, "รอบตรวจสอบ": eq.frequency,
+            "วันที่ตรวจครั้งล่าสุด": eq.lastDate !== "-" ? eq.lastDate : "", "ผลการตรวจ": latest ? latest.result : "",
+            "วันครบกำหนดตรวจครั้งถัดไป": eq.nextDate !== "-" ? eq.nextDate : "", "ผู้ตรวจ": latest ? latest.inspector : "", "สถานะ": eq.status,
+          };
+        });
+        const equipmentSheet = XLSX.utils.json_to_sheet(equipmentRows);
+        equipmentSheet["!cols"] = Object.keys(equipmentRows[0]).map(() => ({ wch: 20 }));
+        XLSX.utils.book_append_sheet(workbook, equipmentSheet, "ทะเบียนอุปกรณ์ความปลอดภัย");
+      }
+    } else {
+      const equipmentEventRows = [];
+      equipment.forEach((eq) => {
+        eq.history.filter((h) => inRange(h.date)).forEach((h) => {
+          equipmentEventRows.push({
+            "รหัสอุปกรณ์": eq.code, "ชื่ออุปกรณ์": eq.name, "สถานที่ติดตั้ง/ใช้งาน": eq.location,
+            "วันที่ตรวจ": h.date, "ผลการตรวจ": h.result, "ผู้ตรวจ": h.inspector,
+          });
+        });
       });
-      const equipmentSheet = XLSX.utils.json_to_sheet(equipmentRows);
-      equipmentSheet["!cols"] = Object.keys(equipmentRows[0]).map(() => ({ wch: 20 }));
-      XLSX.utils.book_append_sheet(workbook, equipmentSheet, "ทะเบียนอุปกรณ์ความปลอดภัย");
+      if (equipmentEventRows.length > 0) {
+        const equipmentSheet = XLSX.utils.json_to_sheet(equipmentEventRows);
+        equipmentSheet["!cols"] = Object.keys(equipmentEventRows[0]).map(() => ({ wch: 20 }));
+        XLSX.utils.book_append_sheet(workbook, equipmentSheet, "ทะเบียนอุปกรณ์ความปลอดภัย");
+      }
     }
 
-    // --- ผลตรวจวัดสภาพแวดล้อม ---
-    if (environmentalMeasurements.length > 0) {
-      const envRows = environmentalMeasurements.map((m) => ({
+    // --- ผลตรวจวัดสภาพแวดล้อม (กรองตามวันที่ตรวจวัดถ้ามีการระบุช่วงเวลา) ---
+    const scopedEnv = environmentalMeasurements.filter((m) => inRange(m.measuredAt));
+    if (scopedEnv.length > 0) {
+      const envRows = scopedEnv.map((m) => ({
         "วันที่ตรวจวัด": m.measuredAt,
         "รายการที่ตรวจ": measurementTypeLabel[m.measurementType] || m.measurementType,
         "จุด/พื้นที่ที่ตรวจ": locationName(m.locationId),
@@ -4067,9 +4089,10 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
       XLSX.utils.book_append_sheet(workbook, envSheet, "ผลตรวจวัดสภาพแวดล้อม");
     }
 
-    // --- ตรวจความปลอดภัย (1 แถวต่อข้อบกพร่อง 1 ข้อ) ---
+    // --- ตรวจความปลอดภัย (1 แถวต่อข้อบกพร่อง 1 ข้อ, กรองตามวันที่ตรวจถ้ามีการระบุช่วงเวลา) ---
+    const scopedInspections = safetyInspections.filter((insp) => inRange(insp.inspectionDate));
     const inspectionRows = [];
-    safetyInspections.forEach((insp) => {
+    scopedInspections.forEach((insp) => {
       if (insp.findings.length === 0) {
         inspectionRows.push({
           "เลขที่ตรวจ": insp.inspectionNumber, "วันที่ตรวจ": insp.inspectionDate, "พื้นที่/แผนกที่ตรวจ": safetyInspectionAreaLabel(insp, locations),
@@ -4105,7 +4128,11 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
       XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
     });
 
-    XLSX.writeFile(workbook, `รายงานราชการ_${todayIso()}.xlsx`);
+    XLSX.writeFile(workbook, filename);
+  };
+
+  const exportFullReport = async () => {
+    await buildAndDownloadReport(null, `รายงานราชการ_${todayIso()}.xlsx`);
   };
 
   const exportOrgInfo = async () => {
