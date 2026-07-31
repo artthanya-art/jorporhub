@@ -1387,15 +1387,16 @@ function Dashboard({
       </div>
 
       {/* แบนเนอร์กลางของระบบ (จัดการโดย Super Admin) — แสดงแนวนอนบนจอกว้าง แนวตั้งบนมือถือ
-          ถ้ายังไม่มีการอัปโหลดเลย จะไม่แสดงกล่องอะไรทั้งสิ้น (ไม่เว้นที่ว่างเปล่าให้ดูรกตา) */}
-      {banners.landscape && (
+          ถ้าอัปโหลดไว้แค่แบบเดียว จะใช้รูปนั้นแสดงทั้งสองขนาดจอไปก่อน (ไม่ต้องมีครบคู่ถึงจะขึ้น)
+          ถ้ายังไม่มีการอัปโหลดเลยทั้งคู่ จะไม่แสดงกล่องอะไรทั้งสิ้น (ไม่เว้นที่ว่างเปล่าให้ดูรกตา) */}
+      {(banners.landscape || banners.portrait) && (
         <div className="hidden sm:block">
-          <BannerImage path={banners.landscape} className="w-full h-auto rounded-lg" />
+          <BannerImage path={banners.landscape || banners.portrait} className="w-full h-auto rounded-lg" />
         </div>
       )}
-      {banners.portrait && (
+      {(banners.portrait || banners.landscape) && (
         <div className="sm:hidden">
-          <BannerImage path={banners.portrait} className="w-full h-auto rounded-lg" />
+          <BannerImage path={banners.portrait || banners.landscape} className="w-full h-auto rounded-lg" />
         </div>
       )}
 
@@ -8546,7 +8547,7 @@ export default function JorPorPrototype() {
       <div className="min-h-[600px] bg-white font-sans">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-200">
           <div className="flex items-center gap-2">
-            <img src="/logo.jpg" alt="JorPorHub" className="h-7 w-auto object-contain" />
+            <img src="/logo.jpg" alt="JorPorHub" className="w-32 h-auto object-contain object-left" />
             <p className="font-semibold text-slate-900 text-[15px]">· ผู้ดูแลระบบ</p>
           </div>
           <div className="flex items-center gap-3">
@@ -9600,7 +9601,7 @@ export default function JorPorPrototype() {
     <div className="min-h-[600px] bg-white font-sans sm:flex sm:items-start">
       {/* แถบบนสุดสำหรับมือถือ — มีปุ่มเปิดเมนู */}
       <div className="sm:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200 print:hidden">
-        <img src="/logo.jpg" alt="JorPorHub" className="h-8 w-auto object-contain" />
+        <img src="/logo.jpg" alt="JorPorHub" className="w-36 h-auto object-contain object-left" />
         <button
           onClick={() => setMobileMenuOpen(true)}
           aria-label="เปิดเมนู"
