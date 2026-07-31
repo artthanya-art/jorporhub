@@ -1388,17 +1388,30 @@ function Dashboard({
 
       {/* แบนเนอร์กลางของระบบ (จัดการโดย Super Admin) — แสดงแนวนอนบนจอกว้าง แนวตั้งบนมือถือ
           ถ้าอัปโหลดไว้แค่แบบเดียว จะใช้รูปนั้นแสดงทั้งสองขนาดจอไปก่อน (ไม่ต้องมีครบคู่ถึงจะขึ้น)
-          ถ้ายังไม่มีการอัปโหลดเลยทั้งคู่ จะไม่แสดงกล่องอะไรทั้งสิ้น (ไม่เว้นที่ว่างเปล่าให้ดูรกตา) */}
-      {(banners.landscape || banners.portrait) && (
-        <div className="hidden sm:block">
-          <BannerImage path={banners.landscape || banners.portrait} className="w-full h-auto rounded-lg" />
-        </div>
-      )}
-      {(banners.portrait || banners.landscape) && (
-        <div className="sm:hidden">
-          <BannerImage path={banners.portrait || banners.landscape} className="w-full h-auto rounded-lg" />
-        </div>
-      )}
+          ถ้ายังไม่มีการอัปโหลดเลยทั้งคู่ จะไม่แสดงกล่องอะไรทั้งสิ้น (ไม่เว้นที่ว่างเปล่าให้ดูรกตา)
+          ถ้าตั้งลิงก์ไว้ คลิกแบนเนอร์แล้วเปิดลิงก์นั้นในแท็บใหม่ */}
+      {(() => {
+        const landscapeBanner = banners.landscape?.path ? banners.landscape : banners.portrait;
+        const portraitBanner = banners.portrait?.path ? banners.portrait : banners.landscape;
+        const wrap = (banner, extraClass) =>
+          banner?.path && (
+            <div className={extraClass}>
+              {banner.link ? (
+                <a href={banner.link} target="_blank" rel="noreferrer">
+                  <BannerImage path={banner.path} className="w-full h-auto rounded-lg" />
+                </a>
+              ) : (
+                <BannerImage path={banner.path} className="w-full h-auto rounded-lg" />
+              )}
+            </div>
+          );
+        return (
+          <>
+            {wrap(landscapeBanner, "hidden sm:block")}
+            {wrap(portraitBanner, "sm:hidden")}
+          </>
+        );
+      })()}
 
       <div className="grid sm:grid-cols-2 gap-4">
         <Card>
@@ -7539,12 +7552,19 @@ function AdminUserManagementPage({ users, tierPermissions, onApprove, onReject, 
 
 // จัดการแบนเนอร์กลางของระบบ (Super Admin เท่านั้น) — แยกแนวตั้ง/แนวนอน แสดงในหน้าแดชบอร์ดของทุกองค์กร
 function BannerManagementPage({ banners, onUpsertBanner }) {
+  const [linkDrafts, setLinkDrafts] = useState({ landscape: banners.landscape?.link || "", portrait: banners.portrait?.link || "" });
+
+  const saveLink = (bannerType) => {
+    onUpsertBanner(bannerType, { linkUrl: linkDrafts[bannerType].trim() });
+  };
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
         <h2 className="text-base font-bold text-slate-900 mb-1">จัดการแบนเนอร์หน้าแดชบอร์ด</h2>
         <p className="text-xs text-slate-400">
           แบนเนอร์นี้จะแสดงในหน้าแดชบอร์ดของทุกองค์กรที่ใช้ระบบ รองรับไฟล์ JPEG และ GIF (รวมถึง GIF แบบเคลื่อนไหว)
+          ถ้าใส่ลิงก์ไว้ คลิกแบนเนอร์จะเปิดลิงก์นั้นในแท็บใหม่
         </p>
       </div>
 
@@ -7552,24 +7572,52 @@ function BannerManagementPage({ banners, onUpsertBanner }) {
         <p className="text-sm font-bold text-slate-900 mb-1">แบนเนอร์จอแนวนอน (Desktop)</p>
         <p className="text-xs text-slate-400 mb-3">แสดงเมื่อผู้ใช้เปิดผ่านคอมพิวเตอร์/แท็บเล็ตแนวนอน</p>
         <FileUploadField
-          value={banners.landscape}
-          onChange={(path) => onUpsertBanner("landscape", path)}
+          value={banners.landscape?.path}
+          onChange={(path) => onUpsertBanner("landscape", { filePath: path })}
           organizationId="global"
           folder="banners"
           kind="banner"
         />
+        <div className="mt-3">
+          <label className="text-xs font-bold text-slate-500 block mb-1">ลิงก์เมื่อคลิกแบนเนอร์ (ถ้ามี)</label>
+          <div className="flex gap-2">
+            <input
+              value={linkDrafts.landscape}
+              onChange={(e) => setLinkDrafts({ ...linkDrafts, landscape: e.target.value })}
+              placeholder="เช่น https://example.com/promotion"
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            />
+            <button onClick={() => saveLink("landscape")} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white shrink-0">
+              บันทึกลิงก์
+            </button>
+          </div>
+        </div>
       </Card>
 
       <Card>
         <p className="text-sm font-bold text-slate-900 mb-1">แบนเนอร์จอแนวตั้ง (Mobile)</p>
         <p className="text-xs text-slate-400 mb-3">แสดงเมื่อผู้ใช้เปิดผ่านมือถือ/หน้าจอแนวตั้ง</p>
         <FileUploadField
-          value={banners.portrait}
-          onChange={(path) => onUpsertBanner("portrait", path)}
+          value={banners.portrait?.path}
+          onChange={(path) => onUpsertBanner("portrait", { filePath: path })}
           organizationId="global"
           folder="banners"
           kind="banner"
         />
+        <div className="mt-3">
+          <label className="text-xs font-bold text-slate-500 block mb-1">ลิงก์เมื่อคลิกแบนเนอร์ (ถ้ามี)</label>
+          <div className="flex gap-2">
+            <input
+              value={linkDrafts.portrait}
+              onChange={(e) => setLinkDrafts({ ...linkDrafts, portrait: e.target.value })}
+              placeholder="เช่น https://example.com/promotion"
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            />
+            <button onClick={() => saveLink("portrait")} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white shrink-0">
+              บันทึกลิงก์
+            </button>
+          </div>
+        </div>
       </Card>
     </div>
   );
@@ -7848,7 +7896,7 @@ function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpe
 export default function JorPorPrototype() {
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
-  const [banners, setBanners] = useState({ portrait: null, landscape: null });
+  const [banners, setBanners] = useState({ portrait: { path: null, link: "" }, landscape: { path: null, link: "" } });
   const [sessionChecked, setSessionChecked] = useState(false);
   const [authView, setAuthView] = useState("login");
   const [tierPermissions, setTierPermissions] = useState(initialTierPermissions);
@@ -8369,26 +8417,33 @@ export default function JorPorPrototype() {
   };
 
   async function fetchBanners() {
-    const { data, error } = await supabase.from("app_banners").select("banner_type, file_path");
+    const { data, error } = await supabase.from("app_banners").select("banner_type, file_path, link_url");
     if (error) {
       console.error("fetchBanners error:", error);
       return;
     }
-    const next = { portrait: null, landscape: null };
-    (data || []).forEach((r) => { next[r.banner_type] = r.file_path; });
+    const next = { portrait: { path: null, link: "" }, landscape: { path: null, link: "" } };
+    (data || []).forEach((r) => { next[r.banner_type] = { path: r.file_path, link: r.link_url || "" }; });
     setBanners(next);
   }
 
   // ใช้ upsert ยึด banner_type เป็นคีย์ — มีได้แค่ 1 แถวต่อประเภท (แนวตั้ง/แนวนอน)
-  const upsertBanner = async (bannerType, filePath) => {
+  // fields รับได้ทั้ง { filePath } หรือ { linkUrl } หรือทั้งคู่พร้อมกัน (แก้ทีละอย่างได้โดยไม่ทับค่าที่ไม่ได้ส่งมา)
+  const upsertBanner = async (bannerType, fields) => {
+    const current = banners[bannerType] || { path: null, link: "" };
+    const nextPath = fields.filePath !== undefined ? fields.filePath : current.path;
+    const nextLink = fields.linkUrl !== undefined ? fields.linkUrl : current.link;
     const { error } = await supabase
       .from("app_banners")
-      .upsert({ banner_type: bannerType, file_path: filePath, updated_at: new Date().toISOString() }, { onConflict: "banner_type" });
+      .upsert(
+        { banner_type: bannerType, file_path: nextPath, link_url: nextLink || null, updated_at: new Date().toISOString() },
+        { onConflict: "banner_type" }
+      );
     if (error) {
       alert("บันทึกแบนเนอร์ไม่สำเร็จ: " + error.message);
       return;
     }
-    setBanners((b) => ({ ...b, [bannerType]: filePath }));
+    setBanners((b) => ({ ...b, [bannerType]: { path: nextPath, link: nextLink } }));
   };
 
   useEffect(() => {
