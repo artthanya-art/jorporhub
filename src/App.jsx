@@ -7696,7 +7696,7 @@ function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpe
 
   return (
     <div className="flex flex-col h-full">
-      <img src="/logo.jpg" alt="JorPorHub" className="h-9 w-auto px-2 py-2 object-contain object-left" />
+      <img src="/logo.jpg" alt="JorPorHub" className="w-full h-auto px-2 py-2 object-contain object-left" />
       <nav className="space-y-1 mt-1 flex-1">
         {NAV.map((item, idx) => {
           if (item.type === "divider") {
