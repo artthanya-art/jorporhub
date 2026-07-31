@@ -3458,7 +3458,10 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
               ) : (
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm text-slate-800 flex-1">{f.finding}</p>
+                    <p className="text-base font-bold text-slate-900 flex-1 flex gap-2">
+                      <span className="text-slate-400">•</span>
+                      <span>{f.finding}</span>
+                    </p>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge tone={riskLevelTone(f.riskLevel)}>{riskLevelLabel[f.riskLevel]}</Badge>
                       <Badge tone={safetyInspectionStatusTone(f.status)}>{f.status}</Badge>
