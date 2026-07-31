@@ -1172,8 +1172,8 @@ function FileUploadField({ value, onChange, organizationId, folder, kind = "imag
   const [uploading, setUploading] = useState(false);
   const [url, setUrl] = useState(null);
 
-  const accept = kind === "pdf" ? "application/pdf" : "image/*";
-  const kindLabel = kind === "pdf" ? "ไฟล์ PDF" : "ไฟล์รูปภาพ";
+  const accept = kind === "pdf" ? "application/pdf" : kind === "banner" ? "image/jpeg,image/gif" : "image/*";
+  const kindLabel = kind === "pdf" ? "ไฟล์ PDF" : kind === "banner" ? "ไฟล์ JPEG หรือ GIF" : "ไฟล์รูปภาพ";
 
   useEffect(() => {
     let cancelled = false;
@@ -1188,7 +1188,10 @@ function FileUploadField({ value, onChange, organizationId, folder, kind = "imag
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const isValidType = kind === "pdf" ? file.type === "application/pdf" : file.type.startsWith("image/");
+    const isValidType =
+      kind === "pdf" ? file.type === "application/pdf" :
+      kind === "banner" ? (file.type === "image/jpeg" || file.type === "image/gif") :
+      file.type.startsWith("image/");
     if (!isValidType) {
       alert(`รับเฉพาะ${kindLabel}เท่านั้น (ไฟล์ที่เลือกเป็น ${file.type || "ไม่ทราบประเภท"})`);
       e.target.value = "";
@@ -1223,13 +1226,18 @@ function FileUploadField({ value, onChange, organizationId, folder, kind = "imag
         {uploading && <span className="text-xs text-slate-400">กำลังอัปโหลด...</span>}
       </div>
       {url && (
-        <div className="flex items-center gap-2 mt-1.5">
-          <a href={url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline">
-            ดูไฟล์ที่แนบไว้
-          </a>
-          <button onClick={() => onChange(null)} className="text-xs text-slate-400 underline hover:text-red-600">
-            ลบไฟล์แนบ
-          </button>
+        <div className="mt-1.5">
+          {kind === "banner" && (
+            <img src={url} alt="ตัวอย่างแบนเนอร์" className="max-h-40 rounded-lg border border-slate-200 mb-1.5" />
+          )}
+          <div className="flex items-center gap-2">
+            <a href={url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline">
+              ดูไฟล์ที่แนบไว้
+            </a>
+            <button onClick={() => onChange(null)} className="text-xs text-slate-400 underline hover:text-red-600">
+              ลบไฟล์แนบ
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -1252,6 +1260,23 @@ function FileLinkPreview({ path, label }) {
   );
 }
 
+// แสดงรูปแบนเนอร์จริง (แก้ signed URL ให้อัตโนมัติ) — ใช้ในหน้าแดชบอร์ด ถ้ายังไม่มีการอัปโหลดจะไม่แสดงอะไรเลย
+function BannerImage({ path, className }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (path) {
+      getSignedFileUrl(path).then((u) => { if (!cancelled) setUrl(u); });
+    } else {
+      setUrl(null);
+    }
+    return () => { cancelled = true; };
+  }, [path]);
+  if (!url) return null;
+  return <img src={url} alt="แบนเนอร์" className={className} />;
+}
+
+
 // ---------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------
@@ -1259,7 +1284,7 @@ function FileLinkPreview({ path, label }) {
 function Dashboard({
   incidents, ppe, equipment, locations, noncompliance, environmentalMeasurements,
   employees, trainingRequirements, trainingRecords, trainingCourses, ltiBaselineDate, onSetLtiBaselineDate, currentUser,
-  safetyInspections,
+  safetyInspections, banners,
 }) {
   const equipmentAttention = equipment.filter((e) => e.status !== "ปกติ").length;
   const ppeSoon = ppe.filter((p) => daysUntil(p.expiry) <= 30).length;
@@ -1361,10 +1386,18 @@ function Dashboard({
         )}
       </div>
 
-      {/* กล่องสำรองไว้สำหรับใส่แบนเนอร์ในอนาคต (เช่น ประกาศ/โปรโมชัน) ตอนนี้ยังไม่มีเนื้อหาจริง */}
-      <div className="border border-dashed border-slate-300 rounded-lg py-8 flex items-center justify-center text-slate-300 text-sm">
-        พื้นที่สำหรับแบนเนอร์ (เร็วๆ นี้)
-      </div>
+      {/* แบนเนอร์กลางของระบบ (จัดการโดย Super Admin) — แสดงแนวนอนบนจอกว้าง แนวตั้งบนมือถือ
+          ถ้ายังไม่มีการอัปโหลดเลย จะไม่แสดงกล่องอะไรทั้งสิ้น (ไม่เว้นที่ว่างเปล่าให้ดูรกตา) */}
+      {banners.landscape && (
+        <div className="hidden sm:block">
+          <BannerImage path={banners.landscape} className="w-full h-auto rounded-lg" />
+        </div>
+      )}
+      {banners.portrait && (
+        <div className="sm:hidden">
+          <BannerImage path={banners.portrait} className="w-full h-auto rounded-lg" />
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-4">
         <Card>
@@ -7503,6 +7536,44 @@ function AdminUserManagementPage({ users, tierPermissions, onApprove, onReject, 
   );
 }
 
+// จัดการแบนเนอร์กลางของระบบ (Super Admin เท่านั้น) — แยกแนวตั้ง/แนวนอน แสดงในหน้าแดชบอร์ดของทุกองค์กร
+function BannerManagementPage({ banners, onUpsertBanner }) {
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-base font-bold text-slate-900 mb-1">จัดการแบนเนอร์หน้าแดชบอร์ด</h2>
+        <p className="text-xs text-slate-400">
+          แบนเนอร์นี้จะแสดงในหน้าแดชบอร์ดของทุกองค์กรที่ใช้ระบบ รองรับไฟล์ JPEG และ GIF (รวมถึง GIF แบบเคลื่อนไหว)
+        </p>
+      </div>
+
+      <Card>
+        <p className="text-sm font-bold text-slate-900 mb-1">แบนเนอร์จอแนวนอน (Desktop)</p>
+        <p className="text-xs text-slate-400 mb-3">แสดงเมื่อผู้ใช้เปิดผ่านคอมพิวเตอร์/แท็บเล็ตแนวนอน</p>
+        <FileUploadField
+          value={banners.landscape}
+          onChange={(path) => onUpsertBanner("landscape", path)}
+          organizationId="global"
+          folder="banners"
+          kind="banner"
+        />
+      </Card>
+
+      <Card>
+        <p className="text-sm font-bold text-slate-900 mb-1">แบนเนอร์จอแนวตั้ง (Mobile)</p>
+        <p className="text-xs text-slate-400 mb-3">แสดงเมื่อผู้ใช้เปิดผ่านมือถือ/หน้าจอแนวตั้ง</p>
+        <FileUploadField
+          value={banners.portrait}
+          onChange={(path) => onUpsertBanner("portrait", path)}
+          organizationId="global"
+          folder="banners"
+          kind="banner"
+        />
+      </Card>
+    </div>
+  );
+}
+
 function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissions, onUpdateTierLimits }) {
   const [selectedTier, setSelectedTier] = useState(null);
   const [pages, setPages] = useState([]);
@@ -7776,6 +7847,7 @@ function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpe
 export default function JorPorPrototype() {
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [banners, setBanners] = useState({ portrait: null, landscape: null });
   const [sessionChecked, setSessionChecked] = useState(false);
   const [authView, setAuthView] = useState("login");
   const [tierPermissions, setTierPermissions] = useState(initialTierPermissions);
@@ -8295,6 +8367,33 @@ export default function JorPorPrototype() {
     setPpeData(ppe.filter((p) => p.id !== id));
   };
 
+  async function fetchBanners() {
+    const { data, error } = await supabase.from("app_banners").select("banner_type, file_path");
+    if (error) {
+      console.error("fetchBanners error:", error);
+      return;
+    }
+    const next = { portrait: null, landscape: null };
+    (data || []).forEach((r) => { next[r.banner_type] = r.file_path; });
+    setBanners(next);
+  }
+
+  // ใช้ upsert ยึด banner_type เป็นคีย์ — มีได้แค่ 1 แถวต่อประเภท (แนวตั้ง/แนวนอน)
+  const upsertBanner = async (bannerType, filePath) => {
+    const { error } = await supabase
+      .from("app_banners")
+      .upsert({ banner_type: bannerType, file_path: filePath, updated_at: new Date().toISOString() }, { onConflict: "banner_type" });
+    if (error) {
+      alert("บันทึกแบนเนอร์ไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setBanners((b) => ({ ...b, [bannerType]: filePath }));
+  };
+
+  useEffect(() => {
+    if (currentUser) fetchBanners();
+  }, [currentUser?.id]);
+
   useEffect(() => {
     if (currentUser && !currentUser.isAdmin) {
       fetchEmployees();
@@ -8475,6 +8574,12 @@ export default function JorPorPrototype() {
           >
             จัดการประเภทผู้ใช้งาน
           </button>
+          <button
+            onClick={() => setAdminView("banners")}
+            className={`text-sm px-3 py-2 border-b-2 -mb-px ${adminView === "banners" ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-500"}`}
+          >
+            แบนเนอร์
+          </button>
         </div>
         <div className="p-4 sm:p-6">
           {adminView === "users" ? (
@@ -8486,13 +8591,15 @@ export default function JorPorPrototype() {
               onUpdateUser={updateUser}
               onGoToRoleManagement={() => setAdminView("roles")}
             />
-          ) : (
+          ) : adminView === "roles" ? (
             <RoleManagementPage
               tierPermissions={tierPermissions}
               tierLimits={tierLimits}
               onUpdateTierPermissions={updateTierPermissions}
               onUpdateTierLimits={updateTierLimits}
             />
+          ) : (
+            <BannerManagementPage banners={banners} onUpsertBanner={upsertBanner} />
           )}
         </div>
       </div>
@@ -9558,6 +9665,7 @@ export default function JorPorPrototype() {
             onSetLtiBaselineDate={setLtiBaselineDate}
             currentUser={currentUser}
             safetyInspections={safetyInspections}
+            banners={banners}
           />
         )}
         {page === "incidents" && (
