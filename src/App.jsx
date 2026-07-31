@@ -3118,12 +3118,18 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
 
   const submit = () => {
     if (!form.inspectionDate) return;
+    // ถ้ากรอกข้อบกพร่องค้างอยู่ในช่องแต่ยังไม่ได้กด "เพิ่มในรายการ" ให้รวมเข้าไปในการบันทึกนี้ไปเลย
+    // (ปุ่ม "เพิ่มในรายการ" มีไว้ใช้เฉพาะตอนจะเพิ่มมากกว่า 1 รายการเท่านั้น)
+    const finalFindings = newFinding.finding.trim()
+      ? [...form.findings, { ...newFinding, tempId: Date.now() }]
+      : form.findings;
     onAdd({
       ...form,
+      findings: finalFindings,
       locationId: form.locationId === LOCATION_OTHER_OPTION ? null : form.locationId,
     });
     setForm(emptyForm);
-    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "" });
+    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
     setShowForm(false);
   };
 
@@ -3244,7 +3250,7 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
                   <Plus size={13} /> เพิ่มในรายการ
                 </button>
               </div>
-              <p className="text-xs text-slate-400">เพิ่ม/แก้ไขข้อบกพร่องเพิ่มเติมภายหลังได้ที่หน้ารายละเอียดของรอบตรวจนี้</p>
+              <p className="text-xs text-slate-400">ถ้ามีข้อบกพร่องแค่ข้อเดียว กด "บันทึก" ด้านล่างได้เลยไม่ต้องกด "เพิ่มในรายการ" ก่อน — ปุ่มนี้ใช้เฉพาะตอนจะเพิ่มมากกว่า 1 ข้อ เท่านั้น (แก้ไขเพิ่มเติมภายหลังได้ที่หน้ารายละเอียดของรอบตรวจนี้)</p>
             </div>
           </div>
 
