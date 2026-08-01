@@ -7315,41 +7315,80 @@ function LoginPage({ onLogin, onGoToRegister }) {
   };
 
   return (
-    <div className="min-h-[600px] flex items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-sm">
-        <p className="text-lg font-bold text-slate-900 mb-1">เข้าสู่ระบบ JorPor</p>
-        <p className="text-sm text-slate-500 mb-5">ระบบช่วยงาน จป.</p>
-        {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-3">{error}</div>}
-        <div className="mb-3">
-          <label className="text-xs font-bold text-slate-500 block mb-1">อีเมล</label>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@company.com"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
+    <div className="min-h-[600px] flex flex-col sm:flex-row bg-white">
+      {/* แผงซ้าย: แบรนด์ + ลวดลายเครือข่ายจุดเชื่อมโยง สื่อถึงไอคอน "hub" ในโลโก้ (แสดงเฉพาะจอกว้าง) */}
+      <div className="hidden sm:flex sm:w-[42%] relative bg-gradient-to-br from-[#0F2A44] to-[#0A1F35] flex-col justify-between p-10 overflow-hidden">
+        <svg className="absolute inset-0 w-full h-full opacity-[0.18]" viewBox="0 0 400 600" fill="none" preserveAspectRatio="xMidYMid slice">
+          <g stroke="#5FC9A0" strokeWidth="1">
+            <line x1="80" y1="120" x2="200" y2="210" />
+            <line x1="200" y1="210" x2="330" y2="150" />
+            <line x1="200" y1="210" x2="150" y2="340" />
+            <line x1="200" y1="210" x2="290" y2="330" />
+            <line x1="150" y1="340" x2="60" y2="420" />
+            <line x1="290" y1="330" x2="350" y2="450" />
+            <line x1="150" y1="340" x2="290" y2="330" />
+          </g>
+          <g fill="#5FC9A0">
+            <circle cx="80" cy="120" r="5" />
+            <circle cx="330" cy="150" r="4" />
+            <circle cx="200" cy="210" r="7" />
+            <circle cx="150" cy="340" r="5" />
+            <circle cx="290" cy="330" r="5" />
+            <circle cx="60" cy="420" r="4" />
+            <circle cx="350" cy="450" r="4" />
+          </g>
+        </svg>
+        <img src="/logo.png" alt="JorPorHub" className="relative w-44 h-auto" />
+        <div className="relative">
+          <p className="text-white text-2xl font-bold leading-snug mb-3">
+            จัดการงานความปลอดภัย<br />ขององค์กรไว้ในที่เดียว
+          </p>
+          <p className="text-[#9FC5D8] text-sm leading-relaxed max-w-xs">
+            บันทึกอุบัติเหตุ ตรวจสอบความปลอดภัย จัดการ PPE และหลักสูตรอบรม พร้อมออกรายงานยื่นราชการ
+            ตามที่กฎหมายความปลอดภัยในการทำงานกำหนด
+          </p>
         </div>
-        <div className="mb-4">
-          <label className="text-xs font-bold text-slate-500 block mb-1">รหัสผ่าน</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-          />
+        <p className="relative text-[#5D7A91] text-xs">JorPorHub · ระบบช่วยงาน จป.</p>
+      </div>
+
+      {/* แผงขวา: ฟอร์มเข้าสู่ระบบ */}
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-10 bg-slate-50">
+        <div className="w-full max-w-sm">
+          <img src="/logo.png" alt="JorPorHub" className="h-10 w-auto mb-8 sm:hidden" />
+          <p className="text-xl font-bold text-slate-900 mb-1">เข้าสู่ระบบ</p>
+          <p className="text-sm text-slate-500 mb-6">กรอกอีเมลและรหัสผ่านของคุณ</p>
+          {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-4">{error}</div>}
+          <div className="mb-3">
+            <label className="text-xs font-bold text-slate-500 block mb-1">อีเมล</label>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@company.com"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#5FC9A0] focus:border-transparent"
+            />
+          </div>
+          <div className="mb-5">
+            <label className="text-xs font-bold text-slate-500 block mb-1">รหัสผ่าน</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#5FC9A0] focus:border-transparent"
+            />
+          </div>
+          <button
+            onClick={submit}
+            disabled={loading}
+            className="w-full text-sm font-medium bg-[#0F2A44] hover:bg-[#0A1F35] text-white px-3 py-2.5 rounded-lg mb-4 disabled:opacity-50 transition-colors"
+          >
+            {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
+          </button>
+          <p className="text-xs text-slate-500 text-center">
+            ยังไม่มีบัญชี? <button onClick={onGoToRegister} className="underline text-slate-700 hover:text-[#0F2A44]">สมัครใช้งาน</button>
+          </p>
         </div>
-        <button
-          onClick={submit}
-          disabled={loading}
-          className="w-full text-sm bg-slate-900 text-white px-3 py-2 rounded-lg mb-3 disabled:opacity-50"
-        >
-          {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
-        </button>
-        <p className="text-xs text-slate-500 text-center">
-          ยังไม่มีบัญชี? <button onClick={onGoToRegister} className="underline text-slate-700">สมัครใช้งาน</button>
-        </p>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -7933,7 +7972,7 @@ function SidebarNav({ page, selectPage, equipmentGroupOpen, setEquipmentGroupOpe
 
   return (
     <div className="flex flex-col h-full">
-      <img src="/logo.jpg" alt="JorPorHub" className="w-full h-auto px-2 py-2 object-contain object-left" />
+      <img src="/logo.png" alt="JorPorHub" className="w-full h-auto px-2 py-2 object-contain object-left" />
       <nav className="space-y-1 mt-1 flex-1">
         {NAV.map((item, idx) => {
           if (item.type === "divider") {
@@ -8719,7 +8758,7 @@ export default function JorPorPrototype() {
       <div className="min-h-[600px] bg-white font-sans">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-200">
           <div className="flex items-center gap-2">
-            <img src="/logo.jpg" alt="JorPorHub" className="w-32 h-auto object-contain object-left" />
+            <img src="/logo.png" alt="JorPorHub" className="w-32 h-auto object-contain object-left" />
             <p className="font-semibold text-slate-900 text-[15px]">· ผู้ดูแลระบบ</p>
           </div>
           <div className="flex items-center gap-3">
@@ -9775,7 +9814,7 @@ export default function JorPorPrototype() {
     <div className="min-h-[600px] bg-white font-sans sm:flex sm:items-start">
       {/* แถบบนสุดสำหรับมือถือ — มีปุ่มเปิดเมนู */}
       <div className="sm:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200 print:hidden">
-        <img src="/logo.jpg" alt="JorPorHub" className="w-36 h-auto object-contain object-left" />
+        <img src="/logo.png" alt="JorPorHub" className="w-36 h-auto object-contain object-left" />
         <button
           onClick={() => setMobileMenuOpen(true)}
           aria-label="เปิดเมนู"
