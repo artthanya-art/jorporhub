@@ -7338,7 +7338,7 @@ function LoginPage({ onLogin, onGoToRegister }) {
             <circle cx="350" cy="450" r="4" />
           </g>
         </svg>
-        <img src="/logo.png" alt="JorPorHub" className="relative w-44 h-auto" />
+        <img src="/logo-light.png" alt="JorPorHub" className="relative w-44 h-auto" />
         <div className="relative">
           <p className="text-white text-2xl font-bold leading-snug mb-3">
             จัดการงานความปลอดภัย<br />ขององค์กรไว้ในที่เดียว
