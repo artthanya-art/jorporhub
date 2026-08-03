@@ -438,7 +438,7 @@ const LANDING_BODY = `
     </div>
     <div class="foot-bottom">
       <span>© 2026 JorPorHub — พัฒนาสำหรับสถานประกอบการไทย</span>
-      <--<span class="placeholder">[เพิ่มเลขทะเบียนบริษัท/ที่อยู่ของคุณที่นี่]</span>*--/>
+      <!--<span class="placeholder">[เพิ่มเลขทะเบียนบริษัท/ที่อยู่ของคุณที่นี่]</span>-->
     </div>
   </div>
 </footer>
