@@ -26,7 +26,7 @@ const LANDING_STYLE = `
   .nav{ position:sticky; top:0; z-index:50; backdrop-filter:saturate(150%) blur(8px);
     background:rgba(247,249,251,0.88); border-bottom:1px solid var(--line); transition:background .3s ease; }
   .nav .wrap{ display:flex; align-items:center; justify-content:space-between; height:74px; }
-  .brand-logo{ height:40px; width:auto; }
+  .brand-logo{ height:60px; width:auto; }
   .nav-cta{ background:var(--navy); color:#fff; border:none; font-family:'Prompt'; font-weight:600; font-size:0.95rem;
     padding:11px 22px; border-radius:8px; cursor:pointer; box-shadow:0 6px 16px rgba(30,42,66,0.25);
     transition:transform .15s ease, box-shadow .15s ease; }
