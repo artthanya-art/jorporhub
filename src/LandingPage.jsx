@@ -425,8 +425,8 @@ const LANDING_BODY = `
       </div>
       <div class="foot-col">
         <h4>ติดต่อเรา</h4>
-        <a href="#" class="placeholder">[ใส่เบอร์โทรของคุณ]</a>
-        <a href="#" class="placeholder">[ใส่อีเมลของคุณ]</a>
+        <a href="#" class="placeholder">02 791 0111</a>
+        <a href="#" class="placeholder">marketing@pdgth.com</a>
         <a href="#" class="placeholder">[ใส่ไลน์/เว็บไซต์]</a>
       </div>
       <div class="foot-col">
@@ -438,7 +438,7 @@ const LANDING_BODY = `
     </div>
     <div class="foot-bottom">
       <span>© 2026 JorPorHub — พัฒนาสำหรับสถานประกอบการไทย</span>
-      <span class="placeholder">[เพิ่มเลขทะเบียนบริษัท/ที่อยู่ของคุณที่นี่]</span>
+      *<span class="placeholder">[เพิ่มเลขทะเบียนบริษัท/ที่อยู่ของคุณที่นี่]</span>*
     </div>
   </div>
 </footer>
