@@ -163,6 +163,7 @@ function mapUserRow(row) {
     name: row.full_name,
     companyName: row.organization?.name ?? "-",
     organizationId: row.organization?.id ?? null,
+    pdpaAcceptedAt: row.pdpa_accepted_at || null,
     ltiBaselineDate: row.organization?.lti_baseline_date ? row.organization.lti_baseline_date.slice(0, 10) : null,
     orgProfile: {
       name: row.organization?.name || "",
@@ -189,7 +190,7 @@ function mapUserRow(row) {
 }
 
 const USER_SELECT_QUERY = `
-  id, email, full_name, role, approval_status, created_at,
+  id, email, full_name, role, approval_status, created_at, pdpa_accepted_at,
   organization:organizations (
     id, name, lti_baseline_date,
     tax_id, industry_type, account_tier, address, employee_count, contact_email, contact_phone,
@@ -7275,7 +7276,138 @@ function TrainingMatrixPage({ employees, locations, courses, requirements, recor
 // Auth: Login / Register / Pending approvals
 // ---------------------------------------------------------------
 
-function LoginPage({ onLogin, onGoToRegister }) {
+// ---------------------------------------------------------------
+// นโยบายความเป็นส่วนตัว (PDPA) — เนื้อหาเดียวกันใช้ทั้งหน้าเต็มและ popup ยินยอม
+// หมายเหตุ: นี่เป็นร่างเริ่มต้นสำหรับใช้งานจริง ควรให้ทนายความ/ที่ปรึกษา PDPA ตรวจสอบก่อนเปิดขายเชิงพาณิชย์
+// ---------------------------------------------------------------
+function PrivacyPolicyContent() {
+  return (
+    <div className="space-y-4 text-sm text-slate-700 leading-relaxed">
+      <p className="text-xs text-slate-400">ปรับปรุงล่าสุด: [ระบุวันที่ประกาศใช้]</p>
+
+      <div>
+        <p className="font-bold text-slate-900 mb-1">1. ข้อมูลที่จัดเก็บ</p>
+        <p>
+          JorPorHub เก็บข้อมูลที่จำเป็นต่อการบริหารจัดการงานความปลอดภัยในการทำงานขององค์กรที่ใช้บริการ ได้แก่
+          ชื่อ-นามสกุล ตำแหน่งงาน แผนก ข้อมูลติดต่อของพนักงาน รวมถึง <b>ข้อมูลที่เกี่ยวข้องกับสุขภาพ</b> เช่น
+          ลักษณะการบาดเจ็บ ส่วนของร่างกายที่ได้รับบาดเจ็บ และภาพถ่ายประกอบเหตุการณ์/การตรวจสอบความปลอดภัย
+          ซึ่งถือเป็นข้อมูลอ่อนไหวตามกฎหมายคุ้มครองข้อมูลส่วนบุคคล
+        </p>
+      </div>
+
+      <div>
+        <p className="font-bold text-slate-900 mb-1">2. วัตถุประสงค์ในการประมวลผลข้อมูล</p>
+        <p>
+          เพื่อบันทึกและติดตามอุบัติเหตุ ตรวจสอบความปลอดภัย จัดการอุปกรณ์ป้องกันภัยส่วนบุคคล (PPE)
+          บริหารหลักสูตรฝึกอบรม และจัดทำรายงานเพื่อยื่นต่อหน่วยงานราชการตามที่กฎหมายความปลอดภัย
+          อาชีวอนามัย และสภาพแวดล้อมในการทำงานกำหนด
+        </p>
+      </div>
+
+      <div>
+        <p className="font-bold text-slate-900 mb-1">3. บทบาทตามกฎหมาย</p>
+        <p>
+          บริษัท/องค์กรที่สมัครใช้งานเป็น <b>ผู้ควบคุมข้อมูลส่วนบุคคล (Data Controller)</b> ของพนักงานตนเอง
+          และเป็นผู้รับผิดชอบในการขอความยินยอมจากพนักงานของตนตามความเหมาะสม JorPorHub ทำหน้าที่เป็น
+          <b> ผู้ประมวลผลข้อมูลส่วนบุคคล (Data Processor)</b> ที่ประมวลผลข้อมูลตามคำสั่งขององค์กรผู้ใช้งานเท่านั้น
+          และไม่นำข้อมูลไปใช้เพื่อวัตถุประสงค์อื่นนอกเหนือจากที่ตกลงกันไว้
+        </p>
+      </div>
+
+      <div>
+        <p className="font-bold text-slate-900 mb-1">4. การเก็บรักษาและความปลอดภัยของข้อมูล</p>
+        <p>
+          ข้อมูลถูกจัดเก็บบนระบบที่แยกฐานข้อมูลของแต่ละองค์กรออกจากกัน (Row-Level Security) ไฟล์แนบ
+          (ภาพถ่าย/เอกสาร) จัดเก็บแบบจำกัดสิทธิ์การเข้าถึงเฉพาะบุคคลในองค์กรเดียวกัน และส่งผ่านการเชื่อมต่อ
+          ที่เข้ารหัส (HTTPS)
+        </p>
+      </div>
+
+      <div>
+        <p className="font-bold text-slate-900 mb-1">5. ระยะเวลาการเก็บข้อมูล</p>
+        <p>
+          ข้อมูลจะถูกเก็บไว้ตลอดระยะเวลาที่องค์กรยังใช้งานระบบอยู่ และจะถูกลบหรือส่งคืนตามคำขอ
+          ภายในระยะเวลาที่เหมาะสมหลังจากยกเลิกการใช้งาน เว้นแต่กฎหมายกำหนดให้ต้องเก็บไว้นานกว่านั้น
+          (เช่น เอกสารที่ต้องยื่นต่อหน่วยงานราชการ)
+        </p>
+      </div>
+
+      <div>
+        <p className="font-bold text-slate-900 mb-1">6. สิทธิของเจ้าของข้อมูล</p>
+        <p>
+          เจ้าของข้อมูล (พนักงานที่ถูกบันทึกในระบบ) มีสิทธิขอเข้าถึง ขอสำเนา ขอแก้ไขให้ถูกต้อง หรือขอให้ลบ
+          ข้อมูลส่วนบุคคลของตนเอง โดยติดต่อผ่าน จป./ผู้ดูแลระบบขององค์กรต้นสังกัด ซึ่งเป็นผู้ควบคุมข้อมูลโดยตรง
+        </p>
+      </div>
+
+      <div>
+        <p className="font-bold text-slate-900 mb-1">7. การติดต่อ</p>
+        <p>
+          หากมีข้อสงสัยเกี่ยวกับนโยบายนี้ ติดต่อได้ที่ [ระบุอีเมล/เบอร์โทรผู้ดูแลระบบ JorPorHub]
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PrivacyPolicyPage({ onBack }) {
+  return (
+    <div className="min-h-[600px] bg-slate-50 p-4 sm:p-8">
+      <div className="max-w-2xl mx-auto">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 mb-4">
+          <ArrowLeft size={16} /> กลับ
+        </button>
+        <Card>
+          <p className="text-lg font-bold text-slate-900 mb-4">นโยบายความเป็นส่วนตัว (PDPA)</p>
+          <PrivacyPolicyContent />
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// popup บังคับให้ผู้ใช้ที่ล็อกอินแล้วแต่ยังไม่เคยกดยอมรับนโยบาย ต้องกดยอมรับก่อนถึงจะใช้งานหน้าอื่นได้
+function PdpaConsentModal({ onAccept }) {
+  const [checked, setChecked] = useState(false);
+  const [showFull, setShowFull] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6">
+        <p className="text-lg font-bold text-slate-900 mb-2">นโยบายความเป็นส่วนตัว (PDPA)</p>
+        <p className="text-sm text-slate-600 mb-4">
+          ก่อนใช้งาน JorPorHub กรุณาอ่านและยอมรับนโยบายความเป็นส่วนตัว เนื่องจากระบบมีการประมวลผล
+          ข้อมูลส่วนบุคคลของพนักงาน รวมถึงข้อมูลที่เกี่ยวข้องกับสุขภาพ (เช่น ลักษณะการบาดเจ็บ)
+        </p>
+
+        {showFull ? (
+          <div className="border border-slate-200 rounded-lg p-4 mb-4 max-h-64 overflow-y-auto">
+            <PrivacyPolicyContent />
+          </div>
+        ) : (
+          <button onClick={() => setShowFull(true)} className="text-sm text-blue-600 underline mb-4 block">
+            อ่านนโยบายฉบับเต็ม
+          </button>
+        )}
+
+        <label className="flex items-start gap-2 text-sm text-slate-700 mb-4">
+          <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="mt-0.5" />
+          <span>ฉันได้อ่านและยินยอมตามนโยบายความเป็นส่วนตัวข้างต้น</span>
+        </label>
+
+        <button
+          onClick={onAccept}
+          disabled={!checked}
+          className="w-full text-sm font-medium bg-[#0F2A44] text-white px-3 py-2.5 rounded-lg disabled:opacity-40"
+        >
+          ยอมรับและดำเนินการต่อ
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LoginPage({ onLogin, onGoToRegister, onGoToLanding }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
@@ -7356,6 +7488,9 @@ function LoginPage({ onLogin, onGoToRegister }) {
       <div className="flex-1 flex items-center justify-center p-6 sm:p-10 bg-slate-50">
         <div className="w-full max-w-sm">
           <img src="/logo.png" alt="JorPorHub" className="h-10 w-auto mb-8 sm:hidden" />
+          <button onClick={onGoToLanding} className="text-xs text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">
+            <span aria-hidden="true">←</span> กลับหน้าแรก
+          </button>
           <p className="text-xl font-bold text-slate-900 mb-1">เข้าสู่ระบบ</p>
           <p className="text-sm text-slate-500 mb-6">กรอกอีเมลและรหัสผ่านของคุณ</p>
           {error && <div className="text-sm bg-red-50 text-red-700 px-3 py-2 rounded-lg mb-4">{error}</div>}
@@ -7394,14 +7529,19 @@ function LoginPage({ onLogin, onGoToRegister }) {
   );
 }
 
-function RegisterPage({ onGoToLogin }) {
+function RegisterPage({ onGoToLogin, onGoToLanding, onGoToPrivacy }) {
   const [form, setForm] = useState({ name: "", companyName: "", email: "", password: "" });
+  const [pdpaConsent, setPdpaConsent] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
     if (!form.name.trim() || !form.companyName.trim() || !form.email.trim() || !form.password) return;
+    if (!pdpaConsent) {
+      setError("กรุณายอมรับนโยบายความเป็นส่วนตัวก่อนสมัครใช้งาน");
+      return;
+    }
     if (form.password.length < 6) {
       setError("รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร");
       return;
@@ -7455,6 +7595,9 @@ function RegisterPage({ onGoToLogin }) {
   return (
     <div className="min-h-[600px] flex items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-sm">
+        <button onClick={onGoToLanding} className="text-xs text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">
+          <span aria-hidden="true">←</span> กลับหน้าแรก
+        </button>
         <p className="text-lg font-bold text-slate-900 mb-1">สมัครใช้งาน</p>
         <p className="text-sm text-slate-500 mb-5">
           1 บัญชี ต่อ 1 บริษัท — ข้อมูลของแต่ละบริษัทแยกจากกันโดยสมบูรณ์ ต้องได้รับการอนุมัติจาก
@@ -7494,6 +7637,16 @@ function RegisterPage({ onGoToLogin }) {
             onChange={(e) => setForm({ ...form, password: e.target.value })}
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
           />
+        </div>
+        <div className="mb-4">
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input type="checkbox" checked={pdpaConsent} onChange={(e) => setPdpaConsent(e.target.checked)} className="mt-0.5" />
+            <span>
+              ฉันได้อ่านและยินยอมตาม
+              <button type="button" onClick={onGoToPrivacy} className="underline text-slate-800 mx-1">นโยบายความเป็นส่วนตัว (PDPA)</button>
+              ของ JorPorHub
+            </span>
+          </label>
         </div>
         <button
           onClick={submit}
@@ -8701,6 +8854,15 @@ export default function JorPorPrototype() {
     setCurrentUser(null);
     setPage("dashboard");
   };
+  const acceptPdpa = async () => {
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("users").update({ pdpa_accepted_at: now }).eq("id", currentUser.id);
+    if (error) {
+      alert("บันทึกการยอมรับนโยบายไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setCurrentUser({ ...currentUser, pdpaAcceptedAt: now });
+  };
   const approveUser = async (id) => {
     await supabase.from("users").update({ approval_status: "approved" }).eq("id", id);
     fetchAllUsers();
@@ -8748,13 +8910,26 @@ export default function JorPorPrototype() {
 
   if (!currentUser) {
     if (authView === "landing") {
-      return <LandingPage onGoToLogin={() => setAuthView("login")} onGoToRegister={() => setAuthView("register")} />;
+      return (
+        <LandingPage
+          onGoToLogin={() => setAuthView("login")}
+          onGoToRegister={() => setAuthView("register")}
+          onGoToPrivacy={() => setAuthView("privacy")}
+        />
+      );
+    }
+    if (authView === "privacy") {
+      return <PrivacyPolicyPage onBack={() => setAuthView("landing")} />;
     }
     return authView === "login" ? (
-      <LoginPage onLogin={handleLogin} onGoToRegister={() => setAuthView("register")} />
+      <LoginPage onLogin={handleLogin} onGoToRegister={() => setAuthView("register")} onGoToLanding={() => setAuthView("landing")} />
     ) : (
-      <RegisterPage onGoToLogin={() => setAuthView("login")} />
+      <RegisterPage onGoToLogin={() => setAuthView("login")} onGoToLanding={() => setAuthView("landing")} onGoToPrivacy={() => setAuthView("privacy")} />
     );
+  }
+
+  if (!currentUser.pdpaAcceptedAt) {
+    return <PdpaConsentModal onAccept={acceptPdpa} />;
   }
 
   if (currentUser.isAdmin) {

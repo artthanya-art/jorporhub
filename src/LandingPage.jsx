@@ -193,7 +193,7 @@ const LANDING_STYLE = `
   footer{ background:var(--navy-deep); color:#A9B4C2; padding:46px 0 30px; }
   .foot-grid{ display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:36px; margin-bottom:30px; }
   .foot-brand{ margin-bottom:12px; }
-  .foot-brand img{ height:28px; filter:brightness(0) invert(1); opacity:0.95; }
+  .foot-brand img{ height:60px; filter:brightness(0) invert(1); opacity:0.95; }
   .foot-col h4{ font-family:'Prompt'; color:#fff; font-size:0.92rem; margin-bottom:12px; font-weight:600; }
   .foot-col p, .foot-col a{ font-size:0.87rem; color:#8D9AAA; text-decoration:none; display:block; margin-bottom:8px; }
   .foot-col a:hover{ color:var(--mint); }
@@ -238,7 +238,7 @@ const LANDING_BODY = `
 
 <nav class="nav">
   <div class="wrap">
-    <img class="brand-logo" src="/logo.png" alt="JorPorHub">
+    <img class="brand-logo" src="/logo.png" alt="JorPorHub" style="height:60px;width:auto;">
     <button class="nav-cta" onclick="window.__jorporGoToLogin && window.__jorporGoToLogin()">เข้าสู่ระบบ</button>
   </div>
 </nav>
@@ -420,13 +420,13 @@ const LANDING_BODY = `
   <div class="wrap">
     <div class="foot-grid">
       <div>
-        <div class="foot-brand"><img src="/logo-light.png" alt="JorPorHub"></div>
+        <div class="foot-brand"><img src="/logo.png" alt="JorPorHub" style="height:60px;width:auto;"></div>
         <p>ระบบบริหารจัดการงานความปลอดภัย อาชีวอนามัย และสภาพแวดล้อมในการทำงาน สำหรับสถานประกอบการไทย</p>
       </div>
       <div class="foot-col">
         <h4>ติดต่อเรา</h4>
-        <a href="#" class="placeholder">02 791 0111</a>
-        <a href="#" class="placeholder">marketing@pdgth.com</a>
+        <a href="#" class="placeholder">[ใส่เบอร์โทรของคุณ]</a>
+        <a href="#" class="placeholder">[ใส่อีเมลของคุณ]</a>
         <a href="#" class="placeholder">[ใส่ไลน์/เว็บไซต์]</a>
       </div>
       <div class="foot-col">
@@ -434,11 +434,12 @@ const LANDING_BODY = `
         <a href="#">ฟีเจอร์ทั้งหมด</a>
         <a href="#">แผนราคา</a>
         <a href="#" onclick="event.preventDefault(); window.__jorporGoToLogin && window.__jorporGoToLogin()">ขอสาธิตระบบ</a>
+        <a href="#" onclick="event.preventDefault(); window.__jorporGoToPrivacy && window.__jorporGoToPrivacy()">นโยบายความเป็นส่วนตัว</a>
       </div>
     </div>
     <div class="foot-bottom">
       <span>© 2026 JorPorHub — พัฒนาสำหรับสถานประกอบการไทย</span>
-      <!--<span class="placeholder">[เพิ่มเลขทะเบียนบริษัท/ที่อยู่ของคุณที่นี่]</span>-->
+      <span class="placeholder">[เพิ่มเลขทะเบียนบริษัท/ที่อยู่ของคุณที่นี่]</span>
     </div>
   </div>
 </footer>
@@ -464,12 +465,13 @@ const LANDING_BODY = `
 
 `;
 
-export default function LandingPage({ onGoToLogin, onGoToRegister }) {
+export default function LandingPage({ onGoToLogin, onGoToRegister, onGoToPrivacy }) {
   useEffect(() => {
     // ปุ่มต่างๆ ในหน้านี้เป็น HTML ดิบ (dangerouslySetInnerHTML) เรียก onclick ผ่านฟังก์ชัน
     // ที่ผูกไว้กับ window ชั่วคราว เพราะ React event handler ปกติใช้กับ HTML ดิบแบบนี้ไม่ได้
     window.__jorporGoToLogin = onGoToLogin;
     window.__jorporGoToRegister = onGoToRegister;
+    window.__jorporGoToPrivacy = onGoToPrivacy;
 
     // ย้ายมาจาก <script> เดิมในไฟล์ต้นฉบับ (dangerouslySetInnerHTML ไม่รัน <script> ที่ฝังมาด้วย)
     const bItems = document.querySelectorAll(".b-item");
@@ -496,10 +498,11 @@ export default function LandingPage({ onGoToLogin, onGoToRegister }) {
     return () => {
       delete window.__jorporGoToLogin;
       delete window.__jorporGoToRegister;
+      delete window.__jorporGoToPrivacy;
       window.removeEventListener("scroll", onScroll);
       io.disconnect();
     };
-  }, [onGoToLogin, onGoToRegister]);
+  }, [onGoToLogin, onGoToRegister, onGoToPrivacy]);
 
   return (
     <>
