@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
+import LandingPage from "./LandingPage";
 import {
   LayoutDashboard, AlertTriangle, HardHat, Wrench, ClipboardCheck,
   Plus, X, Camera, ArrowLeft, ChevronRight, Menu, Users, MapPin, ShieldAlert,
@@ -8054,7 +8055,7 @@ export default function JorPorPrototype() {
   const [currentUser, setCurrentUser] = useState(null);
   const [banners, setBanners] = useState({ portrait: { path: null, link: "" }, landscape: { path: null, link: "" } });
   const [sessionChecked, setSessionChecked] = useState(false);
-  const [authView, setAuthView] = useState("login");
+  const [authView, setAuthView] = useState("landing");
   const [tierPermissions, setTierPermissions] = useState(initialTierPermissions);
   const [tierLimits, setTierLimits] = useState(initialTierLimits);
   const [adminView, setAdminView] = useState("users");
@@ -8746,6 +8747,9 @@ export default function JorPorPrototype() {
   }
 
   if (!currentUser) {
+    if (authView === "landing") {
+      return <LandingPage onGoToLogin={() => setAuthView("login")} onGoToRegister={() => setAuthView("register")} />;
+    }
     return authView === "login" ? (
       <LoginPage onLogin={handleLogin} onGoToRegister={() => setAuthView("register")} />
     ) : (
