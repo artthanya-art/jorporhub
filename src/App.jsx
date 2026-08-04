@@ -659,9 +659,9 @@ const initialTierPermissions = {
 // ข้อจำกัดการบันทึกข้อมูลตามประเภทผู้ใช้งาน — ตอนนี้รองรับจำกัดจำนวนพนักงานสูงสุด
 // ค่า null = ไม่จำกัด ขยายเพิ่มรายการอื่น (เช่น สถานที่, อุปกรณ์) ได้ในอนาคตตามรูปแบบเดียวกัน
 const initialTierLimits = {
-  free: { maxEmployees: 5 },
-  silver: { maxEmployees: 50 },
-  gold: { maxEmployees: null },
+  free: { maxEmployees: 5, allowFileUpload: false },
+  silver: { maxEmployees: 50, allowFileUpload: true },
+  gold: { maxEmployees: null, allowFileUpload: true },
 };
 
 const initialEmployees = [
@@ -1170,7 +1170,7 @@ async function getSignedFileUrl(path) {
 
 // ช่องอัปโหลดไฟล์ที่ใช้ซ้ำได้ — value คือ storage path ที่เก็บไว้ในฐานข้อมูล (ไม่ใช่ไฟล์ตรงๆ)
 // เพราะไฟล์เก็บอยู่ที่ Supabase Storage แยกจากฐานข้อมูลตาราง
-function FileUploadField({ value, onChange, organizationId, folder, kind = "image" }) {
+function FileUploadField({ value, onChange, organizationId, folder, kind = "image", locked = false }) {
   const [uploading, setUploading] = useState(false);
   const [url, setUrl] = useState(null);
 
@@ -1214,6 +1214,14 @@ function FileUploadField({ value, onChange, organizationId, folder, kind = "imag
     setUploading(false);
     e.target.value = "";
   };
+
+  if (locked) {
+    return (
+      <div className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-3 py-2">
+        แนบไฟล์แนบได้เฉพาะแพ็กเกจที่รองรับเท่านั้น กรุณาอัปเกรดแพ็กเกจเพื่อใช้งานฟีเจอร์นี้
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1574,7 +1582,7 @@ function Dashboard({
 // Incidents
 // ---------------------------------------------------------------
 
-function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees, organizationId }) {
+function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees, organizationId, fileUploadAllowed }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [locationMode, setLocationMode] = useState("select"); // "select" | "custom"
@@ -1659,6 +1667,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
         onUpdateInjured={onUpdateInjured}
         onRemoveInjured={onRemoveInjured}
         organizationId={organizationId}
+        fileUploadAllowed={fileUploadAllowed}
       />
     );
   }
@@ -1883,6 +1892,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               organizationId={organizationId}
               folder="incidents"
               kind="image"
+              locked={!fileUploadAllowed}
             />
           </div>
           <div className="mb-3">
@@ -1988,7 +1998,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
 // Incident detail — แก้ไขสถานะ/รายละเอียด และบันทึกความคืบหน้า
 // ---------------------------------------------------------------
 
-function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, onRemoveProgress, onAddInjured, onUpdateInjured, onRemoveInjured, organizationId }) {
+function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, onRemoveProgress, onAddInjured, onUpdateInjured, onRemoveInjured, organizationId, fileUploadAllowed }) {
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState({
     location: incident.location,
@@ -2166,6 +2176,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
                 organizationId={organizationId}
                 folder="incidents"
                 kind="image"
+                locked={!fileUploadAllowed}
               />
             </div>
             <div>
@@ -3073,7 +3084,7 @@ const sdsStatusTone = (s) => (s === "attached" ? "bg-emerald-50 text-emerald-700
 // บันทึกตรวจความปลอดภัย — ตามแบบฟอร์ม "Safety Inspection Record Form"
 // รอบตรวจ 1 รอบ อาจพบข้อบกพร่องได้หลายข้อ แต่ละข้อติดตามสถานะแยกกันได้
 // ---------------------------------------------------------------
-function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations }) {
+function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations, fileUploadAllowed }) {
   const [selectedId, setSelectedId] = useState(null);
   const selected = inspections.find((i) => i.id === selectedId);
 
@@ -3088,6 +3099,7 @@ function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFi
         onDeleteFinding={onDeleteFinding}
         organizationId={organizationId}
         locations={locations}
+        fileUploadAllowed={fileUploadAllowed}
       />
     );
   }
@@ -3100,11 +3112,12 @@ function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFi
       onSelect={setSelectedId}
       organizationId={organizationId}
       locations={locations}
+      fileUploadAllowed={fileUploadAllowed}
     />
   );
 }
 
-function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organizationId, locations }) {
+function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organizationId, locations, fileUploadAllowed }) {
   const [showForm, setShowForm] = useState(false);
   const emptyForm = { inspectionDate: todayIso(), locationId: locations[0]?.id ?? LOCATION_OTHER_OPTION, areaDepartment: "", topics: [], inspectorName: "", inspectionCycle: inspectionCycleOptions[0], approverName: "", findings: [] };
   const [form, setForm] = useState(emptyForm);
@@ -3245,6 +3258,7 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
                   onChange={(path) => setNewFinding({ ...newFinding, photoBefore: path })}
                   organizationId={organizationId}
                   folder="safety-inspections"
+                  locked={!fileUploadAllowed}
                 />
               </div>
               <div className="flex justify-end">
@@ -3312,7 +3326,7 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
   );
 }
 
-function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations }) {
+function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations, fileUploadAllowed }) {
   const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   const [editingRowId, setEditingRowId] = useState(null);
   const [editForm, setEditForm] = useState(null);
@@ -3433,6 +3447,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
                       organizationId={organizationId}
                       folder="safety-inspections"
                       kind="image"
+                      locked={!fileUploadAllowed}
                     />
                   </div>
                   {editForm.status === "ปิดเคสแล้ว" && (
@@ -3450,6 +3465,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
                           onChange={(path) => setEditForm({ ...editForm, photoAfterOrEvidence: path })}
                           organizationId={organizationId}
                           folder="safety-inspections"
+                          locked={!fileUploadAllowed}
                         />
                       </div>
                       <div>
@@ -3528,6 +3544,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
             onChange={(path) => setNewFinding({ ...newFinding, photoBefore: path })}
             organizationId={organizationId}
             folder="safety-inspections"
+            locked={!fileUploadAllowed}
           />
         </div>
         <div className="flex justify-end">
@@ -3555,7 +3572,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
 }
 
 
-function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete, organizationId }) {
+function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete, organizationId, fileUploadAllowed }) {
   const [showForm, setShowForm] = useState(false);
   const emptyForm = {
     name: "", casNumber: "", quantity: "", unit: "", storageLocation: "",
@@ -3695,6 +3712,7 @@ function ChemicalsPage({ chemicals, currentUserName, onAdd, onDelete, organizati
                 organizationId={organizationId}
                 folder="chemicals-sds"
                 kind="pdf"
+                locked={!fileUploadAllowed}
               />
             </div>
             <div>
@@ -4793,7 +4811,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
 // ---------------------------------------------------------------
 // ทะเบียนเครื่องจักร — แยกจากอุปกรณ์ความปลอดภัย ต้องมีวิศวกรที่ขึ้นทะเบียนมาตรวจ/รับรอง
 // ---------------------------------------------------------------
-function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteInspection, onDeleteMachinery, organizationId }) {
+function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteInspection, onDeleteMachinery, organizationId, fileUploadAllowed }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ result: "ผ่าน", engineerName: "", engineerLicenseNumber: "", certificateNumber: "", certificateFilePath: null, findings: "", correctiveDeadline: "" });
@@ -4887,6 +4905,7 @@ function MachineryPage({ machinery, onAddInspection, onAddMachinery, onDeleteIns
                 organizationId={organizationId}
                 folder="machinery-certificates"
                 kind="pdf"
+                locked={!fileUploadAllowed}
               />
             </div>
             <div className="mb-3">
@@ -5871,7 +5890,7 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
 const hazardOptions = Object.keys(hazardTypeLabel);
 const riskLevelOptions = ["low", "medium", "high", "critical"];
 
-function MeasurementSubForm({ onSubmit, onCancel, initialRecord, organizationId }) {
+function MeasurementSubForm({ onSubmit, onCancel, initialRecord, organizationId, fileUploadAllowed }) {
   const isEditMode = !!initialRecord;
   const [shared, setShared] = useState(
     initialRecord
@@ -6027,6 +6046,7 @@ function MeasurementSubForm({ onSubmit, onCancel, initialRecord, organizationId 
           organizationId={organizationId}
           folder="environmental-measurements"
           kind="pdf"
+          locked={!fileUploadAllowed}
         />
       </div>
 
@@ -6144,7 +6164,7 @@ function MeasurementRecordCard({ record, showLocationName, locationName, onEdit,
   );
 }
 
-function LocationDetail({ location, incidents, measurements, safetyInspections, onBack, onUpdate, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
+function LocationDetail({ location, incidents, measurements, safetyInspections, onBack, onUpdate, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId, fileUploadAllowed }) {
   const [editingAssessment, setEditingAssessment] = useState(false);
   const [showMeasurementForm, setShowMeasurementForm] = useState(false);
   const [editingMeasurementId, setEditingMeasurementId] = useState(null);
@@ -6537,6 +6557,7 @@ function LocationDetail({ location, incidents, measurements, safetyInspections, 
               setShowMeasurementForm(false);
             }}
             organizationId={organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
 
@@ -6549,6 +6570,7 @@ function LocationDetail({ location, incidents, measurements, safetyInspections, 
               setEditingMeasurementId(null);
             }}
             organizationId={organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
 
@@ -6574,7 +6596,7 @@ function LocationDetail({ location, incidents, measurements, safetyInspections, 
   );
 }
 
-function LocationsPage({ locations, incidents, measurements, safetyInspections, onAdd, onUpdate, onDelete, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
+function LocationsPage({ locations, incidents, measurements, safetyInspections, onAdd, onUpdate, onDelete, onAddMeasurement, onUpdateMeasurement, onDeleteMeasurement, organizationId, fileUploadAllowed }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", building: "", description: "", riskLevel: "low", hazards: [], ppeRequired: [] });
@@ -6593,6 +6615,7 @@ function LocationsPage({ locations, incidents, measurements, safetyInspections, 
         onUpdateMeasurement={onUpdateMeasurement}
         onDeleteMeasurement={onDeleteMeasurement}
         organizationId={organizationId}
+        fileUploadAllowed={fileUploadAllowed}
       />
     );
   }
@@ -6809,7 +6832,7 @@ function LocationsPage({ locations, incidents, measurements, safetyInspections, 
 // Environmental monitoring — บันทึกผลตรวจวัดสิ่งแวดล้อม ผูกกับสถานที่
 // ---------------------------------------------------------------
 
-function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateMeasurement, onDeleteMeasurement, organizationId }) {
+function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateMeasurement, onDeleteMeasurement, organizationId, fileUploadAllowed }) {
   const [showForm, setShowForm] = useState(false);
   const [locationId, setLocationId] = useState(locations[0]?.id ?? "");
   const [editingId, setEditingId] = useState(null);
@@ -6858,6 +6881,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
               setShowForm(false);
             }}
             organizationId={organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         </div>
       )}
@@ -6871,6 +6895,7 @@ function EnvironmentalMonitoringPage({ locations, measurements, onAdd, onUpdateM
             setEditingId(null);
           }}
           organizationId={organizationId}
+          fileUploadAllowed={fileUploadAllowed}
         />
       )}
 
@@ -7913,15 +7938,17 @@ function BannerManagementPage({ banners, onUpsertBanner }) {
   );
 }
 
-function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissions, onUpdateTierLimits }) {
+function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierConfig }) {
   const [selectedTier, setSelectedTier] = useState(null);
   const [pages, setPages] = useState([]);
   const [maxEmployees, setMaxEmployees] = useState("");
+  const [allowFileUpload, setAllowFileUpload] = useState(true);
 
   const startEdit = (tier) => {
     setSelectedTier(tier);
     setPages([...(tierPermissions[tier] || [])]);
     setMaxEmployees(tierLimits[tier]?.maxEmployees != null ? String(tierLimits[tier].maxEmployees) : "");
+    setAllowFileUpload(tierLimits[tier]?.allowFileUpload !== false);
   };
 
   const togglePage = (key) => {
@@ -7929,8 +7956,11 @@ function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissio
   };
 
   const save = () => {
-    onUpdateTierPermissions(selectedTier, pages);
-    onUpdateTierLimits(selectedTier, { maxEmployees: maxEmployees.trim() === "" ? null : Number(maxEmployees) });
+    onUpdateTierConfig(selectedTier, {
+      pages,
+      maxEmployees: maxEmployees.trim() === "" ? null : Number(maxEmployees),
+      allowFileUpload,
+    });
     setSelectedTier(null);
   };
 
@@ -7972,8 +8002,26 @@ function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissio
             value={maxEmployees}
             onChange={(e) => setMaxEmployees(e.target.value)}
             placeholder="ไม่จำกัด"
-            className="w-full sm:w-56 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            className="w-full sm:w-56 border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4"
           />
+          <label className="text-xs font-bold text-slate-500 block mb-1">แนบไฟล์ (รูปภาพ/PDF) ได้หรือไม่</label>
+          <p className="text-xs text-slate-400 mb-2">
+            ควบคุมทุกจุดที่มีปุ่มแนบไฟล์ในระบบ (ตรวจความปลอดภัย, สารเคมี, ตรวจวัดสิ่งแวดล้อม, เครื่องจักร, อุบัติเหตุ)
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setAllowFileUpload(true)}
+              className={`text-xs px-3 py-1.5 rounded-lg border ${allowFileUpload ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
+            >
+              แนบไฟล์ได้
+            </button>
+            <button
+              onClick={() => setAllowFileUpload(false)}
+              className={`text-xs px-3 py-1.5 rounded-lg border ${!allowFileUpload ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
+            >
+              แนบไฟล์ไม่ได้
+            </button>
+          </div>
         </Card>
 
         <div className="flex justify-end">
@@ -7996,6 +8044,7 @@ function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissio
                 <th className="px-4 py-2.5 font-bold">แพ็กเกจ</th>
                 <th className="px-4 py-2.5 font-bold">จำนวนหน้าที่เข้าถึงได้</th>
                 <th className="px-4 py-2.5 font-bold">พนักงานสูงสุด</th>
+                <th className="px-4 py-2.5 font-bold">แนบไฟล์</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -8008,6 +8057,9 @@ function RoleManagementPage({ tierPermissions, tierLimits, onUpdateTierPermissio
                   </td>
                   <td className="px-4 py-2.5 text-slate-500">
                     {tierLimits[t]?.maxEmployees != null ? `${tierLimits[t].maxEmployees} คน` : "ไม่จำกัด"}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500">
+                    {tierLimits[t]?.allowFileUpload !== false ? "ได้" : "ไม่ได้"}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <button onClick={() => startEdit(t)} className="text-xs text-slate-500 underline hover:text-slate-700">
@@ -8799,7 +8851,7 @@ export default function JorPorPrototype() {
     data.forEach((p) => {
       const key = p.name.toLowerCase();
       perms[key] = p.features?.pages === "all" ? ALL_PAGE_KEYS : (p.features?.pages || []);
-      limits[key] = { maxEmployees: p.max_employees };
+      limits[key] = { maxEmployees: p.max_employees, allowFileUpload: p.features?.allowFileUpload !== false };
     });
     setTierPermissions(perms);
     setTierLimits(limits);
@@ -8856,17 +8908,10 @@ export default function JorPorPrototype() {
     await supabase.from("subscriptions").update({ plan_id: planRow.id }).eq("organization_id", userRow.organization_id);
     fetchAllUsers();
   };
-  const updateTierPermissions = async (tier, pages) => {
+  const updateTierConfig = async (tier, { pages, maxEmployees, allowFileUpload }) => {
     await supabase
       .from("subscription_plans")
-      .update({ features: { pages } })
-      .ilike("name", tier);
-    fetchTierConfig();
-  };
-  const updateTierLimits = async (tier, limits) => {
-    await supabase
-      .from("subscription_plans")
-      .update({ max_employees: limits.maxEmployees })
+      .update({ features: { pages, allowFileUpload }, max_employees: maxEmployees })
       .ilike("name", tier);
     fetchTierConfig();
   };
@@ -8953,8 +8998,7 @@ export default function JorPorPrototype() {
             <RoleManagementPage
               tierPermissions={tierPermissions}
               tierLimits={tierLimits}
-              onUpdateTierPermissions={updateTierPermissions}
-              onUpdateTierLimits={updateTierLimits}
+              onUpdateTierConfig={updateTierConfig}
             />
           ) : (
             <BannerManagementPage banners={banners} onUpsertBanner={upsertBanner} />
@@ -8983,6 +9027,7 @@ export default function JorPorPrototype() {
 
   // ข้อจำกัดจำนวนพนักงานตามประเภทผู้ใช้งาน (เช่น Free บันทึกได้ไม่เกิน 5 คน)
   const employeeLimit = tierLimits[currentUser.userType]?.maxEmployees ?? null;
+  const fileUploadAllowed = tierLimits[currentUser.userType]?.allowFileUpload !== false;
 
   async function fetchNoncompliance() {
     setNoncomplianceLoading(true);
@@ -10042,6 +10087,7 @@ export default function JorPorPrototype() {
             locations={locations}
             employees={employees}
             organizationId={currentUser.organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
         {page === "ppe" && (
@@ -10060,7 +10106,7 @@ export default function JorPorPrototype() {
           <UnsafeActsPage employees={employees} locations={locations} records={noncompliance} onAdd={addNoncompliance} onDelete={deleteNoncompliance} />
         )}
         {page === "chemicals" && (
-          <ChemicalsPage chemicals={chemicals} currentUserName={currentUser.name} onAdd={addChemical} onDelete={deleteChemical} organizationId={currentUser.organizationId} />
+          <ChemicalsPage chemicals={chemicals} currentUserName={currentUser.name} onAdd={addChemical} onDelete={deleteChemical} organizationId={currentUser.organizationId} fileUploadAllowed={fileUploadAllowed} />
         )}
         {page === "safetyInspections" && (
           <SafetyInspectionsPage
@@ -10073,6 +10119,7 @@ export default function JorPorPrototype() {
             onDeleteFinding={deleteSafetyInspectionFinding}
             organizationId={currentUser.organizationId}
             locations={locations}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
         {page === "govReports" && (
@@ -10111,6 +10158,7 @@ export default function JorPorPrototype() {
             onDeleteInspection={deleteMachineryInspection}
             onDeleteMachinery={deleteMachineryUnit}
             organizationId={currentUser.organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
         {page === "locations" && (
@@ -10126,6 +10174,7 @@ export default function JorPorPrototype() {
             onUpdateMeasurement={updateEnvironmentalMeasurement}
             onDeleteMeasurement={deleteEnvironmentalMeasurement}
             organizationId={currentUser.organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
         {page === "employees" && (
@@ -10152,6 +10201,7 @@ export default function JorPorPrototype() {
             onUpdateMeasurement={updateEnvironmentalMeasurement}
             onDeleteMeasurement={deleteEnvironmentalMeasurement}
             organizationId={currentUser.organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
         {page === "trainingMatrix" && (
