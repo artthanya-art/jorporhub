@@ -7366,47 +7366,6 @@ function PrivacyPolicyPage({ onBack }) {
   );
 }
 
-// popup บังคับให้ผู้ใช้ที่ล็อกอินแล้วแต่ยังไม่เคยกดยอมรับนโยบาย ต้องกดยอมรับก่อนถึงจะใช้งานหน้าอื่นได้
-function PdpaConsentModal({ onAccept }) {
-  const [checked, setChecked] = useState(false);
-  const [showFull, setShowFull] = useState(false);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6">
-        <p className="text-lg font-bold text-slate-900 mb-2">นโยบายความเป็นส่วนตัว (PDPA)</p>
-        <p className="text-sm text-slate-600 mb-4">
-          ก่อนใช้งาน JorPorHub กรุณาอ่านและยอมรับนโยบายความเป็นส่วนตัว เนื่องจากระบบมีการประมวลผล
-          ข้อมูลส่วนบุคคลของพนักงาน รวมถึงข้อมูลที่เกี่ยวข้องกับสุขภาพ (เช่น ลักษณะการบาดเจ็บ)
-        </p>
-
-        {showFull ? (
-          <div className="border border-slate-200 rounded-lg p-4 mb-4 max-h-64 overflow-y-auto">
-            <PrivacyPolicyContent />
-          </div>
-        ) : (
-          <button onClick={() => setShowFull(true)} className="text-sm text-blue-600 underline mb-4 block">
-            อ่านนโยบายฉบับเต็ม
-          </button>
-        )}
-
-        <label className="flex items-start gap-2 text-sm text-slate-700 mb-4">
-          <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="mt-0.5" />
-          <span>ฉันได้อ่านและยินยอมตามนโยบายความเป็นส่วนตัวข้างต้น</span>
-        </label>
-
-        <button
-          onClick={onAccept}
-          disabled={!checked}
-          className="w-full text-sm font-medium bg-[#0F2A44] text-white px-3 py-2.5 rounded-lg disabled:opacity-40"
-        >
-          ยอมรับและดำเนินการต่อ
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function LoginPage({ onLogin, onGoToRegister, onGoToLanding }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -7572,6 +7531,25 @@ function RegisterPage({ onGoToLogin, onGoToLanding, onGoToPrivacy }) {
       }
       return;
     }
+
+    // บันทึก log หลักฐานการกดยอมรับ ToS/DPA/Privacy Notice ไว้เป็นหลักฐานทางกฎหมาย
+    // (อีเมล, IP, เวลา) — ทำแบบ best-effort ไม่ block การสมัครถ้าหาไอพีไม่ได้/เน็ตช้า
+    let ip = null;
+    try {
+      const ipRes = await fetch("https://api.ipify.org?format=json");
+      const ipData = await ipRes.json();
+      ip = ipData.ip || null;
+    } catch (e) {
+      console.error("ipify lookup failed:", e);
+    }
+    const { error: logError } = await supabase.from("consent_logs").insert({
+      email: form.email,
+      ip_address: ip,
+      user_agent: navigator.userAgent,
+      document_name: "Terms of Service + DPA (Data Processing Agreement) + Privacy Notice",
+    });
+    if (logError) console.error("consent_logs insert failed:", logError);
+
     setSubmitted(true);
   };
 
@@ -7642,9 +7620,11 @@ function RegisterPage({ onGoToLogin, onGoToLanding, onGoToPrivacy }) {
           <label className="flex items-start gap-2 text-xs text-slate-600">
             <input type="checkbox" checked={pdpaConsent} onChange={(e) => setPdpaConsent(e.target.checked)} className="mt-0.5" />
             <span>
-              ฉันได้อ่านและยินยอมตาม
-              <button type="button" onClick={onGoToPrivacy} className="underline text-slate-800 mx-1">นโยบายความเป็นส่วนตัว (PDPA)</button>
-              ของ JorPorHub
+              ข้าพเจ้าได้อ่านและยอมรับ ข้อกำหนดและเงื่อนไขการให้บริการ (Terms of Service) (ซึ่งรวมถึง
+              ข้อตกลงการประมวลผลข้อมูลส่วนบุคคล (
+              <a href="/dpa.pdf" target="_blank" rel="noreferrer" className="underline text-slate-800">DPA</a>
+              )) และรับทราบ{" "}
+              <button type="button" onClick={onGoToPrivacy} className="underline text-slate-800">นโยบายความเป็นส่วนตัว (Privacy Notice)</button>
             </span>
           </label>
         </div>
@@ -8854,15 +8834,6 @@ export default function JorPorPrototype() {
     setCurrentUser(null);
     setPage("dashboard");
   };
-  const acceptPdpa = async () => {
-    const now = new Date().toISOString();
-    const { error } = await supabase.from("users").update({ pdpa_accepted_at: now }).eq("id", currentUser.id);
-    if (error) {
-      alert("บันทึกการยอมรับนโยบายไม่สำเร็จ: " + error.message);
-      return;
-    }
-    setCurrentUser({ ...currentUser, pdpaAcceptedAt: now });
-  };
   const approveUser = async (id) => {
     await supabase.from("users").update({ approval_status: "approved" }).eq("id", id);
     fetchAllUsers();
@@ -8926,10 +8897,6 @@ export default function JorPorPrototype() {
     ) : (
       <RegisterPage onGoToLogin={() => setAuthView("login")} onGoToLanding={() => setAuthView("landing")} onGoToPrivacy={() => setAuthView("privacy")} />
     );
-  }
-
-  if (!currentUser.pdpaAcceptedAt) {
-    return <PdpaConsentModal onAccept={acceptPdpa} />;
   }
 
   if (currentUser.isAdmin) {
