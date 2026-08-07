@@ -136,7 +136,6 @@ const userTypeOptions = Object.keys(userTypeLabel);
 const PAGE_OPTIONS = [
   { key: "dashboard", label: "แดชบอร์ด" },
   { key: "incidents", label: "อุบัติเหตุ" },
-  { key: "unsafeActs", label: "การกระทำที่ไม่ปลอดภัย" },
   { key: "environmental", label: "ตรวจวัดสิ่งแวดล้อม" },
   { key: "trainingMatrix", label: "Training Matrix" },
   { key: "checklist", label: "ตรวจสอบ" },
@@ -273,6 +272,21 @@ function mapCourseRow(row) {
 // ---------------------------------------------------------------
 const inspectionRiskLevelOptions = ["high", "medium", "low"]; // ใช้ riskLevelLabel/riskLevelTone ร่วมกับที่มีอยู่แล้ว
 
+// ประเภทของสิ่งที่พบ — รวมฟีเจอร์ "การกระทำที่ไม่ปลอดภัย" เดิมเข้ามาเป็นหนึ่งในสามประเภทนี้
+const findingTypeOptions = ["unsafe_act", "unsafe_condition", "near_miss"];
+const findingTypeLabel = {
+  unsafe_act: "Unsafe Act (การกระทำที่ไม่ปลอดภัย)",
+  unsafe_condition: "Unsafe Condition (สภาพที่ไม่ปลอดภัย)",
+  near_miss: "Near Miss (เหตุการณ์เฉียดอุบัติเหตุ)",
+};
+const findingTypeShortLabel = { unsafe_act: "Unsafe Act", unsafe_condition: "Unsafe Condition", near_miss: "Near Miss" };
+const findingTypeTone = (t) => {
+  if (t === "unsafe_act") return "bg-red-50 text-red-700";
+  if (t === "unsafe_condition") return "bg-amber-50 text-amber-700";
+  if (t === "near_miss") return "bg-purple-50 text-purple-700";
+  return "bg-slate-100 text-slate-600";
+};
+
 // หัวข้อที่ตรวจ — เลือกได้หลายหัวข้อต่อ 1 รอบตรวจ (เก็บเป็น text[] ในฐานข้อมูล)
 const safetyInspectionTopicOptions = [
   "ทางเดิน/ทางหนีไฟ",
@@ -327,6 +341,8 @@ function mapSafetyInspectionFindingRow(row) {
     rowId: row.id,
     finding: row.finding,
     riskLevel: row.risk_level,
+    findingType: row.finding_type || null,
+    employeeId: row.employee_id || null,
     photoBefore: row.photo_before || "-",
     correctiveAction: row.corrective_action || "-",
     responsiblePerson: row.responsible_person || "-",
@@ -1317,7 +1333,14 @@ function Dashboard({
   const equipmentAttention = equipment.filter((e) => e.status !== "ปกติ").length;
   const ppeSoon = ppe.filter((p) => daysUntil(p.expiry) <= 30).length;
   const incidents30d = incidents.filter((i) => daysBetween(i.incidentDate) <= 30).length;
-  const noncompliance30d = noncompliance.filter((r) => daysBetween(r.date) <= 30).length;
+  // ไล่ทุกรอบตรวจความปลอดภัยพื้นที่ แล้วดึงเฉพาะข้อบกพร่องประเภท Unsafe Act มาแสดงเป็นภาพรวมเดียว
+  // (แทนที่เมนู "การกระทำที่ไม่ปลอดภัย" เดิมที่รวมเข้ามาเป็นส่วนหนึ่งของการตรวจความปลอดภัยแล้ว)
+  const unsafeActFindings = safetyInspections.flatMap((insp) =>
+    insp.findings
+      .filter((f) => f.findingType === "unsafe_act")
+      .map((f) => ({ ...f, inspectionDate: insp.inspectionDate, area: safetyInspectionAreaLabel(insp, locations) }))
+  );
+  const noncompliance30d = unsafeActFindings.filter((f) => daysBetween(f.inspectionDate) <= 30).length;
   const envFailingMeasurements = [...environmentalMeasurements]
     .filter((m) => m.result === "fail")
     .sort((a, b) => (a.measuredAt < b.measuredAt ? 1 : -1));
@@ -1477,18 +1500,21 @@ function Dashboard({
         </Card>
 
         <Card>
-          <p className="text-sm font-bold text-slate-900 mb-3">การกระทำที่ไม่ปลอดภัยล่าสุด</p>
+          <p className="text-sm font-bold text-slate-900 mb-3">การกระทำที่ไม่ปลอดภัยล่าสุด (Unsafe Act)</p>
           <div className="space-y-3">
-            {noncompliance.slice(0, 3).map((r) => (
-              <div key={r.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+            {unsafeActFindings.slice(0, 3).map((f) => (
+              <div key={f.rowId} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
                 <div>
-                  <p className="text-sm text-slate-800">{r.ppeName} · {r.location}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{formatThaiDate(r.date)}</p>
+                  <p className="text-sm text-slate-800">{f.finding}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {f.employeeId && <>{employees.find((e) => e.id === f.employeeId)?.name} · </>}
+                    {f.area} · {formatThaiDate(f.inspectionDate)}
+                  </p>
                 </div>
-                <Badge tone={r.action === "ให้หยุดงาน" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}>{r.action}</Badge>
+                <Badge tone={safetyInspectionStatusTone(f.status)}>{f.status}</Badge>
               </div>
             ))}
-            {noncompliance.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีบันทึกการไม่ปฏิบัติตาม</p>}
+            {unsafeActFindings.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีบันทึก Unsafe Act</p>}
           </div>
         </Card>
 
@@ -3084,7 +3110,7 @@ const sdsStatusTone = (s) => (s === "attached" ? "bg-emerald-50 text-emerald-700
 // บันทึกตรวจความปลอดภัย — ตามแบบฟอร์ม "Safety Inspection Record Form"
 // รอบตรวจ 1 รอบ อาจพบข้อบกพร่องได้หลายข้อ แต่ละข้อติดตามสถานะแยกกันได้
 // ---------------------------------------------------------------
-function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations, fileUploadAllowed }) {
+function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations, fileUploadAllowed, employees }) {
   const [selectedId, setSelectedId] = useState(null);
   const selected = inspections.find((i) => i.id === selectedId);
 
@@ -3100,6 +3126,7 @@ function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFi
         organizationId={organizationId}
         locations={locations}
         fileUploadAllowed={fileUploadAllowed}
+        employees={employees}
       />
     );
   }
@@ -3113,21 +3140,22 @@ function SafetyInspectionsPage({ inspections, onAdd, onUpdate, onDelete, onAddFi
       organizationId={organizationId}
       locations={locations}
       fileUploadAllowed={fileUploadAllowed}
+      employees={employees}
     />
   );
 }
 
-function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organizationId, locations, fileUploadAllowed }) {
+function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organizationId, locations, fileUploadAllowed, employees }) {
   const [showForm, setShowForm] = useState(false);
   const emptyForm = { inspectionDate: todayIso(), locationId: locations[0]?.id ?? LOCATION_OTHER_OPTION, areaDepartment: "", topics: [], inspectorName: "", inspectionCycle: inspectionCycleOptions[0], approverName: "", findings: [] };
   const [form, setForm] = useState(emptyForm);
   const toggleTopic = (t) => setForm((f) => ({ ...f, topics: f.topics.includes(t) ? f.topics.filter((x) => x !== t) : [...f.topics, t] }));
-  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
+  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", findingType: "unsafe_condition", employeeId: "", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
 
   const addFindingToForm = () => {
     if (!form.finding && !newFinding.finding.trim()) return;
     setForm({ ...form, findings: [...form.findings, { ...newFinding, tempId: Date.now() }] });
-    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
+    setNewFinding({ finding: "", riskLevel: "medium", findingType: "unsafe_condition", employeeId: "", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   };
   const removeFindingFromForm = (tempId) => setForm({ ...form, findings: form.findings.filter((f) => f.tempId !== tempId) });
 
@@ -3144,7 +3172,7 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
       locationId: form.locationId === LOCATION_OTHER_OPTION ? null : form.locationId,
     });
     setForm(emptyForm);
-    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
+    setNewFinding({ finding: "", riskLevel: "medium", findingType: "unsafe_condition", employeeId: "", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
     setShowForm(false);
   };
 
@@ -3225,7 +3253,12 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
                   <div key={f.tempId} className="px-3 py-2 flex items-start justify-between gap-2 text-sm">
                     <div>
                       <p className="text-slate-800">{f.finding}</p>
-                      <p className="text-xs text-slate-500">ความเสี่ยง {riskLevelLabel[f.riskLevel]} {f.responsiblePerson && <>· รับผิดชอบ: {f.responsiblePerson}</>} {f.dueDate && <>· กำหนดเสร็จ {formatThaiDate(f.dueDate)}</>}</p>
+                      <p className="text-xs text-slate-500">
+                        {f.findingType && <>{findingTypeShortLabel[f.findingType]} · </>}
+                        ความเสี่ยง {riskLevelLabel[f.riskLevel]}
+                        {f.findingType === "unsafe_act" && f.employeeId && <> · {employees.find((e) => e.id === f.employeeId)?.name}</>}
+                        {f.responsiblePerson && <> · รับผิดชอบ: {f.responsiblePerson}</>} {f.dueDate && <>· กำหนดเสร็จ {formatThaiDate(f.dueDate)}</>}
+                      </p>
                     </div>
                     <button onClick={() => removeFindingFromForm(f.tempId)} className="text-xs text-slate-400 underline hover:text-red-600 shrink-0">ลบ</button>
                   </div>
@@ -3234,6 +3267,33 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
             )}
             <div className="p-3 bg-white space-y-2">
               <textarea rows={2} value={newFinding.finding} onChange={(e) => setNewFinding({ ...newFinding, finding: e.target.value })} placeholder="สิ่งที่พบ (ข้อบกพร่อง)" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none" />
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ประเภท</label>
+                <div className="flex flex-wrap gap-2">
+                  {findingTypeOptions.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setNewFinding({ ...newFinding, findingType: t })}
+                      className={`text-xs px-3 py-1.5 rounded-lg border ${newFinding.findingType === t ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-500"}`}
+                    >
+                      {findingTypeLabel[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {newFinding.findingType === "unsafe_act" && (
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">พนักงานที่มีการกระทำที่ไม่ปลอดภัย</label>
+                  <select
+                    value={newFinding.employeeId}
+                    onChange={(e) => setNewFinding({ ...newFinding, employeeId: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                  >
+                    <option value="">-- เลือกพนักงาน --</option>
+                    {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                  </select>
+                </div>
+              )}
               <div className="grid sm:grid-cols-3 gap-2">
                 <div>
                   <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความเสี่ยง</label>
@@ -3326,8 +3386,8 @@ function SafetyInspectionsList({ inspections, onAdd, onDelete, onSelect, organiz
   );
 }
 
-function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations, fileUploadAllowed }) {
-  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
+function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, onUpdateFinding, onDeleteFinding, organizationId, locations, fileUploadAllowed, employees }) {
+  const [newFinding, setNewFinding] = useState({ finding: "", riskLevel: "medium", findingType: "unsafe_condition", employeeId: "", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   const [editingRowId, setEditingRowId] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [editingNumber, setEditingNumber] = useState(false);
@@ -3350,6 +3410,8 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
       photoBefore: f.photoBefore === "-" ? null : f.photoBefore,
       photoAfterOrEvidence: f.photoAfterOrEvidence === "-" ? null : f.photoAfterOrEvidence,
       isDocumentationFix: f.isDocumentationFix,
+      findingType: f.findingType || "unsafe_condition",
+      employeeId: f.employeeId || "",
     });
   };
 
@@ -3366,7 +3428,7 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
   const addFinding = () => {
     if (!newFinding.finding.trim()) return;
     onAddFinding(inspection.id, newFinding);
-    setNewFinding({ finding: "", riskLevel: "medium", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
+    setNewFinding({ finding: "", riskLevel: "medium", findingType: "unsafe_condition", employeeId: "", correctiveAction: "", responsiblePerson: "", dueDate: "", photoBefore: null });
   };
 
   return (
@@ -3417,6 +3479,33 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
               {editingRowId === f.rowId ? (
                 <div className="space-y-3 print:hidden">
                   <p className="text-sm text-slate-800">{f.finding}</p>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-1">ประเภท</label>
+                    <div className="flex flex-wrap gap-2">
+                      {findingTypeOptions.map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setEditForm({ ...editForm, findingType: t })}
+                          className={`text-xs px-3 py-1.5 rounded-lg border ${editForm.findingType === t ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-500"}`}
+                        >
+                          {findingTypeLabel[t]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {editForm.findingType === "unsafe_act" && (
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 block mb-1">พนักงานที่มีการกระทำที่ไม่ปลอดภัย</label>
+                      <select
+                        value={editForm.employeeId}
+                        onChange={(e) => setEditForm({ ...editForm, employeeId: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="">-- เลือกพนักงาน --</option>
+                        {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div className="grid sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-bold text-slate-500 block mb-1">มาตรการแก้ไข</label>
@@ -3486,11 +3575,15 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
                       <span className="text-slate-400">•</span>
                       <span>{f.finding}</span>
                     </p>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                      {f.findingType && <Badge tone={findingTypeTone(f.findingType)}>{findingTypeShortLabel[f.findingType]}</Badge>}
                       <Badge tone={riskLevelTone(f.riskLevel)}>{riskLevelLabel[f.riskLevel]}</Badge>
                       <Badge tone={safetyInspectionStatusTone(f.status)}>{f.status}</Badge>
                     </div>
                   </div>
+                  {f.findingType === "unsafe_act" && f.employeeId && (
+                    <p className="text-sm text-slate-600 mt-1">พนักงาน: {employees.find((e) => e.id === f.employeeId)?.name ?? "-"}</p>
+                  )}
                   {f.correctiveAction !== "-" && <p className="text-sm text-slate-600 mt-1.5">มาตรการแก้ไข: {f.correctiveAction}</p>}
                   <p className="text-xs text-slate-500 mt-1">
                     {f.responsiblePerson !== "-" && <>ผู้รับผิดชอบ: {f.responsiblePerson} · </>}
@@ -3520,6 +3613,33 @@ function SafetyInspectionDetail({ inspection, onBack, onUpdate, onAddFinding, on
       <Card className="print:hidden">
         <p className="text-xs font-bold text-slate-600 mb-2">เพิ่มข้อบกพร่องใหม่</p>
         <textarea rows={2} value={newFinding.finding} onChange={(e) => setNewFinding({ ...newFinding, finding: e.target.value })} placeholder="สิ่งที่พบ (ข้อบกพร่อง)" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none mb-2" />
+        <div className="mb-2">
+          <label className="text-xs font-bold text-slate-500 block mb-1">ประเภท</label>
+          <div className="flex flex-wrap gap-2">
+            {findingTypeOptions.map((t) => (
+              <button
+                key={t}
+                onClick={() => setNewFinding({ ...newFinding, findingType: t })}
+                className={`text-xs px-3 py-1.5 rounded-lg border ${newFinding.findingType === t ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-500"}`}
+              >
+                {findingTypeLabel[t]}
+              </button>
+            ))}
+          </div>
+        </div>
+        {newFinding.findingType === "unsafe_act" && (
+          <div className="mb-2">
+            <label className="text-xs font-bold text-slate-500 block mb-1">พนักงานที่มีการกระทำที่ไม่ปลอดภัย</label>
+            <select
+              value={newFinding.employeeId}
+              onChange={(e) => setNewFinding({ ...newFinding, employeeId: e.target.value })}
+              className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            >
+              <option value="">-- เลือกพนักงาน --</option>
+              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+            </select>
+          </div>
+        )}
         <div className="grid sm:grid-cols-3 gap-2 mb-2">
           <div>
             <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความเสี่ยง</label>
@@ -8130,7 +8250,6 @@ const initialTenantStore = {
 const NAV = [
   { key: "dashboard", label: "แดชบอร์ด", icon: LayoutDashboard },
   { key: "incidents", label: "อุบัติเหตุ", icon: AlertTriangle },
-  { key: "unsafeActs", label: "การกระทำที่ไม่ปลอดภัย", icon: ShieldAlert },
   { key: "safetyInspections", label: "บันทึกตรวจความปลอดภัย", icon: Search },
   { key: "environmental", label: "ตรวจวัดสิ่งแวดล้อม", icon: Wind },
   { key: "trainingMatrix", label: "Training Matrix", icon: GraduationCap },
@@ -9143,7 +9262,7 @@ export default function JorPorPrototype() {
     if (inspectionIds.length > 0) {
       const { data: findingRows } = await supabase
         .from("safety_inspection_findings")
-        .select("id, inspection_id, finding, risk_level, photo_before, corrective_action, responsible_person, due_date, status, actual_completion_date, photo_after_or_evidence, is_documentation_fix")
+        .select("id, inspection_id, finding, risk_level, finding_type, employee_id, photo_before, corrective_action, responsible_person, due_date, status, actual_completion_date, photo_after_or_evidence, is_documentation_fix")
         .in("inspection_id", inspectionIds);
       (findingRows || []).forEach((f) => {
         if (!findingsByInspection[f.inspection_id]) findingsByInspection[f.inspection_id] = [];
@@ -9194,6 +9313,8 @@ export default function JorPorPrototype() {
             inspection_id: data.id,
             finding: f.finding,
             risk_level: f.riskLevel,
+            finding_type: f.findingType || null,
+            employee_id: f.findingType === "unsafe_act" ? f.employeeId || null : null,
             photo_before: f.photoBefore || null,
             corrective_action: f.correctiveAction || null,
             responsible_person: f.responsiblePerson || null,
@@ -9245,6 +9366,8 @@ export default function JorPorPrototype() {
         inspection_id: inspectionId,
         finding: f.finding,
         risk_level: f.riskLevel,
+        finding_type: f.findingType || null,
+        employee_id: f.findingType === "unsafe_act" ? f.employeeId || null : null,
         photo_before: f.photoBefore || null,
         corrective_action: f.correctiveAction || null,
         responsible_person: f.responsiblePerson || null,
@@ -9275,6 +9398,8 @@ export default function JorPorPrototype() {
     if (fields.photoAfterOrEvidence !== undefined) payload.photo_after_or_evidence = fields.photoAfterOrEvidence === "-" ? null : fields.photoAfterOrEvidence;
     if (fields.photoBefore !== undefined) payload.photo_before = fields.photoBefore === "-" ? null : fields.photoBefore;
     if (fields.isDocumentationFix !== undefined) payload.is_documentation_fix = fields.isDocumentationFix;
+    if (fields.findingType !== undefined) payload.finding_type = fields.findingType || null;
+    if (fields.employeeId !== undefined) payload.employee_id = fields.findingType === "unsafe_act" ? fields.employeeId || null : null;
     const { error } = await supabase.from("safety_inspection_findings").update(payload).eq("id", rowId);
     if (error) {
       alert("บันทึกไม่สำเร็จ: " + error.message);
@@ -10102,9 +10227,6 @@ export default function JorPorPrototype() {
             onDeleteCatalogItem={deletePpeCatalogItem}
           />
         )}
-        {page === "unsafeActs" && (
-          <UnsafeActsPage employees={employees} locations={locations} records={noncompliance} onAdd={addNoncompliance} onDelete={deleteNoncompliance} />
-        )}
         {page === "chemicals" && (
           <ChemicalsPage chemicals={chemicals} currentUserName={currentUser.name} onAdd={addChemical} onDelete={deleteChemical} organizationId={currentUser.organizationId} fileUploadAllowed={fileUploadAllowed} />
         )}
@@ -10120,6 +10242,7 @@ export default function JorPorPrototype() {
             organizationId={currentUser.organizationId}
             locations={locations}
             fileUploadAllowed={fileUploadAllowed}
+            employees={employees}
           />
         )}
         {page === "govReports" && (
