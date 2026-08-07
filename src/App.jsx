@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, Fragment } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
 import LandingPage from "./LandingPage";
 import {
@@ -2628,87 +2628,6 @@ function ppeStatusOf(daysLeft) {
   return "ปกติ";
 }
 
-function PpeByItemView({ employees, ppe }) {
-  const [openName, setOpenName] = useState(null);
-  const nameOf = (id) => employees.find((e) => e.id === id)?.name ?? "-";
-
-  const grouped = Object.values(
-    ppe.reduce((acc, p) => {
-      if (!acc[p.name]) acc[p.name] = { name: p.name, items: [] };
-      acc[p.name].items.push(p);
-      return acc;
-    }, {})
-  );
-
-  return (
-    <div className="space-y-3">
-      {grouped.map((g) => {
-        const totalQuantity = g.items.reduce((sum, p) => sum + p.quantity, 0);
-        const expiringSoon = g.items.filter((p) => daysUntil(p.expiry) <= 90).length;
-        const isOpen = openName === g.name;
-        return (
-          <Card key={g.name} className="p-0 overflow-hidden">
-            <button
-              onClick={() => setOpenName(isOpen ? null : g.name)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left"
-            >
-              <div>
-                <p className="text-sm font-bold text-slate-900">{g.name}</p>
-                <p className="text-xs text-slate-500">จำนวนทั้งหมด {totalQuantity} · ถือครองโดย {g.items.length} คน</p>
-              </div>
-              <div className="flex items-center gap-3">
-                {expiringSoon > 0 ? (
-                  <Badge tone="bg-amber-50 text-amber-700">ใกล้หมดอายุ {expiringSoon} ชิ้น</Badge>
-                ) : (
-                  <span className="text-xs text-slate-400">ไม่มีใกล้หมดอายุ</span>
-                )}
-                <ChevronRight size={16} className={`text-slate-400 transition-transform ${isOpen ? "rotate-90" : ""}`} />
-              </div>
-            </button>
-            {isOpen && (
-              <div className="overflow-x-auto">
-              <table className="w-full text-sm border-t border-slate-100">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-left">
-                    <th className="px-4 py-2 font-medium">พนักงานที่ได้รับมอบ</th>
-                    <th className="px-4 py-2 font-medium">จำนวน</th>
-                    <th className="px-4 py-2 font-medium">ใกล้ถึงกำหนดเปลี่ยนหรือยัง</th>
-                    <th className="px-4 py-2 font-medium">วันที่รับ</th>
-                    <th className="px-4 py-2 font-medium">วันหมดอายุ</th>
-                    <th className="px-4 py-2 font-medium">สถานะ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {g.items.map((p) => {
-                    const remaining = daysUntil(p.expiry);
-                    const nearingReplacement = remaining <= 90;
-                    return (
-                      <tr key={p.id} className="border-t border-slate-100">
-                        <td className="px-4 py-2">{nameOf(p.employeeId)}</td>
-                        <td className="px-4 py-2 text-slate-500">{p.quantity}</td>
-                        <td className="px-4 py-2">
-                          {nearingReplacement ? (
-                            <Badge tone="bg-amber-50 text-amber-700">ใกล้ถึงกำหนด (เหลือ {remaining} วัน)</Badge>
-                          ) : (
-                            <span className="text-slate-400">ยังไม่ถึงกำหนด</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2 text-slate-500">{formatThaiDate(p.issuedDate)}</td>
-                        <td className="px-4 py-2 text-slate-500">{formatThaiDate(p.expiry)}</td>
-                        <td className="px-4 py-2"><Badge tone={statusTone(ppeStatusOf(remaining))}>เหลือ {remaining} วัน</Badge></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              </div>
-            )}
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
 
 function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
   const [showForm, setShowForm] = useState(false);
@@ -3058,20 +2977,20 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
   );
 }
 
-function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem, organizationId, fileUploadAllowed }) {
+function PpeCatalogView({ catalog, ppe, employees, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem, organizationId, fileUploadAllowed }) {
+  const [selectedId, setSelectedId] = useState(null);
   const [showCatalogForm, setShowCatalogForm] = useState(false);
-  const [catalogForm, setCatalogForm] = useState({
-    name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180",
-    specFilePath: null, certificateFilePath: null, certificateExpiryDate: "", manualFilePath: null,
-  });
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ model: "", standard: "", lifespanDays: "" });
-  const [docsOpenId, setDocsOpenId] = useState(null);
-
   const emptyCatalogForm = {
     name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180",
     specFilePath: null, certificateFilePath: null, certificateExpiryDate: "", manualFilePath: null,
   };
+  const [catalogForm, setCatalogForm] = useState(emptyCatalogForm);
+
+  const nameOf = (id) => employees.find((e) => e.id === id)?.name ?? "-";
+
+  // รายการที่ถืออุปกรณ์ประเภทนี้อยู่ และใกล้ถึงกำหนดเปลี่ยน (เหลือ <= 90 วัน)
+  const nearExpiryFor = (catalogId) =>
+    ppe.filter((p) => p.catalogId === catalogId && daysUntil(p.expiry) <= 90);
 
   const submitCatalog = () => {
     if (!catalogForm.name.trim()) return;
@@ -3090,35 +3009,150 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
     setShowCatalogForm(false);
   };
 
-  const startEdit = (c) => {
-    setEditingId(c.id);
-    setEditForm({ model: c.model || "", standard: c.standard, lifespanDays: String(c.lifespanDays) });
-  };
+  const selected = catalog.find((c) => c.id === selectedId);
 
-  const saveEdit = (id) => {
-    onUpdateCatalogItem(id, {
-      model: editForm.model || "-",
-      standard: editForm.standard || "-",
-      lifespanDays: Number(editForm.lifespanDays) || 1,
-    });
-    setEditingId(null);
-  };
+  if (selected) {
+    const nearExpiry = nearExpiryFor(selected.id);
+    return (
+      <div className="space-y-5">
+        <button onClick={() => setSelectedId(null)} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
+          <ArrowLeft size={16} /> กลับไปรายการอุปกรณ์
+        </button>
+
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-slate-900">{selected.name}</h1>
+            <p className="text-sm text-slate-500 mt-0.5">{selected.model !== "-" ? selected.model : "ยังไม่ระบุรุ่น"}</p>
+          </div>
+          <ConfirmDeleteButton onConfirm={() => { onDeleteCatalogItem(selected.id); setSelectedId(null); }} />
+        </div>
+
+        <Card>
+          <p className="text-sm font-bold text-slate-900 mb-3">ข้อมูลอุปกรณ์</p>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อรุ่น</label>
+              <input
+                value={selected.model === "-" ? "" : selected.model}
+                onChange={(e) => onUpdateCatalogItem(selected.id, { model: e.target.value || "-" })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">มาตรฐานอ้างอิง</label>
+              <input
+                value={selected.standard === "-" ? "" : selected.standard}
+                onChange={(e) => onUpdateCatalogItem(selected.id, { standard: e.target.value || "-" })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 block mb-1">อายุการใช้งาน (วัน)</label>
+            <input
+              type="number" min="1"
+              value={selected.lifespanDays}
+              onChange={(e) => onUpdateCatalogItem(selected.id, { lifespanDays: Number(e.target.value) || 1 })}
+              className="w-full sm:w-48 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
+            การแก้ไขอายุการใช้งานจะมีผลกับการคำนวณ "กำหนดแจกครั้งถัดไป" ของการรับมอบครั้งใหม่เท่านั้น ไม่กระทบรายการที่บันทึกไปแล้ว
+          </p>
+        </Card>
+
+        <Card>
+          <p className="text-sm font-bold text-slate-900 mb-3">เอกสารแนบ</p>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Spec</label>
+              <FileUploadField
+                value={selected.specFilePath}
+                onChange={(path) => onUpdateCatalogItem(selected.id, { specFilePath: path })}
+                organizationId={organizationId}
+                folder="ppe-catalog-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Certificate</label>
+              <FileUploadField
+                value={selected.certificateFilePath}
+                onChange={(path) => onUpdateCatalogItem(selected.id, { certificateFilePath: path })}
+                organizationId={organizationId}
+                folder="ppe-catalog-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+              <label className="text-xs font-bold text-slate-500 block mb-1 mt-2">วันหมดอายุ Certificate</label>
+              <input
+                type="date"
+                value={selected.certificateExpiryDate || ""}
+                onChange={(e) => onUpdateCatalogItem(selected.id, { certificateExpiryDate: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Manual (ไม่บังคับ)</label>
+              <FileUploadField
+                value={selected.manualFilePath}
+                onChange={(path) => onUpdateCatalogItem(selected.id, { manualFilePath: path })}
+                organizationId={organizationId}
+                folder="ppe-catalog-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <p className="text-sm font-bold text-slate-900 mb-1">
+            พนักงานที่อุปกรณ์ใกล้หมดอายุ <span className="font-normal text-slate-400">({nearExpiry.length} คน)</span>
+          </p>
+          {nearExpiry.length === 0 ? (
+            <p className="text-sm text-slate-400 mt-2">ไม่มีใครใกล้ถึงกำหนดเปลี่ยนในตอนนี้</p>
+          ) : (
+            <div className="space-y-2 mt-2">
+              {nearExpiry.map((p) => {
+                const remaining = daysUntil(p.expiry);
+                return (
+                  <div key={p.id} className="flex items-center justify-between border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
+                    <div>
+                      <p className="text-sm text-slate-800">{nameOf(p.employeeId)}</p>
+                      <p className="text-xs text-slate-400">วันหมดอายุ {formatThaiDate(p.expiry)}</p>
+                    </div>
+                    <Badge tone={statusTone(ppeStatusOf(remaining))}>เหลือ {remaining} วัน</Badge>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <Card className="max-w-2xl">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-bold text-slate-900">ประเภท/รุ่นอุปกรณ์ในระบบ</p>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold text-slate-900">รายการอุปกรณ์</h1>
         <button
           onClick={() => setShowCatalogForm(true)}
-          className="flex items-center gap-1.5 text-xs text-slate-600 underline hover:text-slate-900"
+          className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg"
         >
-          <Plus size={14} /> เพิ่มประเภทใหม่
+          <Plus size={16} /> เพิ่มประเภทใหม่
         </button>
       </div>
 
       {showCatalogForm && (
-        <div className="border border-slate-200 rounded-lg p-3 mb-3 space-y-3">
-          <div className="grid sm:grid-cols-2 gap-3">
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-slate-900">เพิ่มประเภทอุปกรณ์ใหม่</p>
+            <button onClick={() => setShowCatalogForm(false)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="text-xs font-bold text-slate-500 block mb-1">ชื่อประเภทอุปกรณ์</label>
               <select
@@ -3139,7 +3173,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
               />
             </div>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="text-xs font-bold text-slate-500 block mb-1">มาตรฐานอ้างอิง</label>
               <input
@@ -3209,157 +3243,63 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
               บันทึก
             </button>
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-slate-500 text-left">
-            <th className="py-1.5 font-medium">ชื่อประเภทอุปกรณ์</th>
-            <th className="py-1.5 font-medium">ชื่อรุ่น</th>
-            <th className="py-1.5 font-medium">มาตรฐาน</th>
-            <th className="py-1.5 font-medium">อายุการใช้งาน</th>
-            <th className="py-1.5 font-medium">เอกสาร</th>
-            <th className="py-1.5"></th>
-            <th className="py-1.5"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {catalog.map((c) => {
-            const isEditing = editingId === c.id;
-            const docStatus = docCompletenessStatus(c);
-            return (
-              <Fragment key={c.id}>
-              <tr className="border-t border-slate-100">
-                <td className="py-1.5">{c.name}</td>
-                {isEditing ? (
-                  <>
-                    <td className="py-1.5 pr-2">
-                      <input
-                        value={editForm.model}
-                        onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      <input
-                        value={editForm.standard}
-                        onChange={(e) => setEditForm({ ...editForm, standard: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number" min="1"
-                          value={editForm.lifespanDays}
-                          onChange={(e) => setEditForm({ ...editForm, lifespanDays: e.target.value })}
-                          className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm"
-                        />
-                        <span className="text-slate-500">วัน</span>
-                      </div>
-                    </td>
-                    <td className="py-1.5"></td>
-                    <td className="py-1.5">
-                      <div className="flex gap-2">
-                        <button onClick={() => saveEdit(c.id)} className="text-xs text-emerald-700 underline">บันทึก</button>
-                        <button onClick={() => setEditingId(null)} className="text-xs text-slate-400 underline">ยกเลิก</button>
-                      </div>
-                    </td>
-                    <td className="py-1.5"></td>
-                  </>
-                ) : (
-                  <>
-                    <td className="py-1.5 text-slate-500">{c.model || "-"}</td>
-                    <td className="py-1.5 text-slate-500">{c.standard}</td>
-                    <td className="py-1.5 text-slate-500">{c.lifespanDays} วัน</td>
-                    <td className="py-1.5">
-                      <button onClick={() => setDocsOpenId(docsOpenId === c.id ? null : c.id)}>
-                        <Badge tone={docStatus.complete ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}>
-                          {docStatus.complete ? "ครบ" : `ขาด ${docStatus.missing.join(", ")}`}
-                        </Badge>
-                      </button>
-                    </td>
-                    <td className="py-1.5">
-                      <button onClick={() => startEdit(c)} className="text-xs text-slate-500 underline hover:text-slate-800">
-                        แก้ไข
-                      </button>
-                    </td>
-                    <td className="py-1.5">
-                      <ConfirmDeleteButton onConfirm={() => onDeleteCatalogItem(c.id)} />
-                    </td>
-                  </>
-                )}
-              </tr>
-              {docsOpenId === c.id && (
-                <tr className="border-t border-slate-100 bg-slate-50">
-                  <td colSpan={6} className="py-3 px-2">
-                    <div className="grid sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="text-xs font-bold text-slate-500 block mb-1">Spec</label>
-                        <FileUploadField
-                          value={c.specFilePath}
-                          onChange={(path) => onUpdateCatalogItem(c.id, { specFilePath: path })}
-                          organizationId={organizationId}
-                          folder="ppe-catalog-docs"
-                          kind="pdf"
-                          locked={!fileUploadAllowed}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold text-slate-500 block mb-1">Certificate</label>
-                        <FileUploadField
-                          value={c.certificateFilePath}
-                          onChange={(path) => onUpdateCatalogItem(c.id, { certificateFilePath: path })}
-                          organizationId={organizationId}
-                          folder="ppe-catalog-docs"
-                          kind="pdf"
-                          locked={!fileUploadAllowed}
-                        />
-                        <label className="text-xs font-bold text-slate-500 block mb-1 mt-2">วันหมดอายุ Certificate</label>
-                        <input
-                          type="date"
-                          value={c.certificateExpiryDate || ""}
-                          onChange={(e) => onUpdateCatalogItem(c.id, { certificateExpiryDate: e.target.value })}
-                          className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold text-slate-500 block mb-1">Manual (ไม่บังคับ)</label>
-                        <FileUploadField
-                          value={c.manualFilePath}
-                          onChange={(path) => onUpdateCatalogItem(c.id, { manualFilePath: path })}
-                          organizationId={organizationId}
-                          folder="ppe-catalog-docs"
-                          kind="pdf"
-                          locked={!fileUploadAllowed}
-                        />
-                      </div>
-                    </div>
+      <Card className="p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500 text-left">
+              <th className="px-4 py-2.5 font-bold">ชื่อประเภทอุปกรณ์</th>
+              <th className="px-4 py-2.5 font-bold">ชื่อรุ่น</th>
+              <th className="px-4 py-2.5 font-bold">มาตรฐาน</th>
+              <th className="px-4 py-2.5 font-bold">เอกสาร</th>
+              <th className="px-4 py-2.5 font-bold">สถานะ</th>
+              <th className="px-4 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {catalog.map((c) => {
+              const docStatus = docCompletenessStatus(c);
+              const nearExpiryCount = nearExpiryFor(c.id).length;
+              return (
+                <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50">
+                  <td className="px-4 py-2.5 font-bold text-slate-900">{c.name}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{c.model || "-"}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{c.standard}</td>
+                  <td className="px-4 py-2.5">
+                    <Badge tone={docStatus.complete ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}>
+                      {docStatus.complete ? "ครบ" : `ขาด ${docStatus.missing.join(", ")}`}
+                    </Badge>
                   </td>
+                  <td className="px-4 py-2.5">
+                    {nearExpiryCount > 0 ? (
+                      <Badge tone="bg-amber-50 text-amber-700">ใกล้หมดอายุ {nearExpiryCount} คน</Badge>
+                    ) : (
+                      <span className="text-xs text-slate-400">ปกติ</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
                 </tr>
-              )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-      </div>
-      <p className="text-xs text-slate-400 mt-3">
-        การแก้ไขอายุการใช้งานจะมีผลกับการคำนวณ "กำหนดแจกครั้งถัดไป" ของการรับมอบครั้งใหม่เท่านั้น
-        ไม่กระทบรายการที่บันทึกไปแล้ว
-      </p>
-    </Card>
+              );
+            })}
+            {catalog.length === 0 && (
+              <tr><td colSpan={6} className="px-4 py-3 text-sm text-slate-400">ยังไม่มีประเภทอุปกรณ์ในระบบ</td></tr>
+            )}
+          </tbody>
+        </table>
+        </div>
+      </Card>
+    </div>
   );
 }
 
 function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem, organizationId, fileUploadAllowed, onGoToEmployee }) {
-  const [tab, setTab] = useState("item");
+  const [tab, setTab] = useState("issuance");
   const tabs = [
-    { key: "item", label: "รายงานสถานะ PPE" },
     { key: "issuance", label: "บันทึกการเบิก PPE" },
-    { key: "catalog", label: "ประเภท/รุ่นอุปกรณ์" },
+    { key: "catalog", label: "รายการอุปกรณ์" },
   ];
 
   return (
@@ -3380,10 +3320,9 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
         ))}
       </div>
 
-      {tab === "item" && <PpeByItemView employees={employees} ppe={ppe} />}
       {tab === "issuance" && <PpeIssuanceView employees={employees} ppe={ppe} catalog={catalog} onAddIssuance={onAddIssuance} onDeleteIssuance={onDeleteIssuance} onGoToEmployee={onGoToEmployee} />}
       {tab === "catalog" && (
-        <PpeCatalogView catalog={catalog} onAddCatalogItem={onAddCatalogItem} onUpdateCatalogItem={onUpdateCatalogItem} onDeleteCatalogItem={onDeleteCatalogItem} organizationId={organizationId} fileUploadAllowed={fileUploadAllowed} />
+        <PpeCatalogView catalog={catalog} ppe={ppe} employees={employees} onAddCatalogItem={onAddCatalogItem} onUpdateCatalogItem={onUpdateCatalogItem} onDeleteCatalogItem={onDeleteCatalogItem} organizationId={organizationId} fileUploadAllowed={fileUploadAllowed} />
       )}
     </div>
   );
