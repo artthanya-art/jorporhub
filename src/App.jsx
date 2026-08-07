@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Fragment } from "react";
 import { supabase } from "./lib/supabaseClient";
 import LandingPage from "./LandingPage";
 import {
@@ -549,6 +549,10 @@ function mapEquipmentRow(row) {
     nextDate: row.next_inspection_due ? row.next_inspection_due.slice(0, 10) : "-",
     status: equipmentStatusDbToUi[row.status] || row.status,
     pendingReinspectionDue: row.pending_reinspection_due ? row.pending_reinspection_due.slice(0, 10) : null,
+    specFilePath: row.spec_file_path || null,
+    certificateFilePath: row.certificate_file_path || null,
+    certificateExpiryDate: row.certificate_expiry_date || null,
+    manualFilePath: row.manual_file_path || null,
     history: [],
   };
 }
@@ -623,7 +627,22 @@ function mapPpeCatalogRow(row) {
     model: row.model || "-",
     standard: row.standard_ref || "-",
     lifespanDays: row.lifespan_days,
+    specFilePath: row.spec_file_path || null,
+    certificateFilePath: row.certificate_file_path || null,
+    certificateExpiryDate: row.certificate_expiry_date || null,
+    manualFilePath: row.manual_file_path || null,
   };
+}
+
+// เช็คความครบของเอกสาร — นับเฉพาะ Spec กับ Certificate (Manual ไม่บังคับ ไม่นับรวม)
+// ถือว่า "ไม่ครบ" ถ้าขาดไฟล์ใดไฟล์หนึ่ง หรือใบรับรองหมดอายุแล้ว
+function docCompletenessStatus(item) {
+  const missing = [];
+  if (!item.specFilePath) missing.push("Spec");
+  if (!item.certificateFilePath) missing.push("Certificate");
+  const expired = item.certificateExpiryDate && item.certificateExpiryDate < todayIso();
+  if (expired) missing.push("Certificate หมดอายุ");
+  return { complete: missing.length === 0, missing };
 }
 
 // การเบิก PPE (ppe_issuance) — ไม่มีชื่อ/รุ่น/มาตรฐานอุปกรณ์เก็บซ้ำในตารางนี้ (เก็บแค่
@@ -1345,9 +1364,12 @@ function PrintableImage({ path, label }) {
 function Dashboard({
   incidents, ppe, equipment, locations, noncompliance, environmentalMeasurements,
   employees, trainingRequirements, trainingRecords, trainingCourses, ltiBaselineDate, onSetLtiBaselineDate, currentUser,
-  safetyInspections, banners,
+  safetyInspections, banners, ppeCatalog,
 }) {
   const equipmentAttention = equipment.filter((e) => e.status !== "ปกติ").length;
+  const docsIncompleteCount =
+    equipment.filter((e) => !docCompletenessStatus(e).complete).length +
+    ppeCatalog.filter((c) => !docCompletenessStatus(c).complete).length;
   const ppeSoon = ppe.filter((p) => daysUntil(p.expiry) <= 30).length;
   const incidents30d = incidents.filter((i) => daysBetween(i.incidentDate) <= 30).length;
   // ไล่ทุกรอบตรวจความปลอดภัยพื้นที่ แล้วดึงเฉพาะข้อบกพร่องประเภท Unsafe Act มาแสดงเป็นภาพรวมเดียว
@@ -1421,6 +1443,7 @@ function Dashboard({
         <DashboardMetricCard label="วันไม่มีอุบัติเหตุ (LTI)" value={daysSinceLastLti ?? "-"} icon={ClipboardCheck} tone="emerald" />
         <DashboardMetricCard label="PPE ใกล้หมดอายุ" value={ppeSoon} icon={HardHat} tone="amber" />
         <DashboardMetricCard label="อุปกรณ์ต้องเฝ้าระวัง" value={equipmentAttention} icon={Wrench} tone="red" />
+        <DashboardMetricCard label="เอกสาร Spec/Certificate ไม่ครบ" value={docsIncompleteCount} icon={FileText} tone="amber" />
         <DashboardMetricCard label="การกระทำไม่ปลอดภัยใน 30 วัน" value={noncompliance30d} icon={ShieldAlert} tone="slate" />
         <DashboardMetricCard label="ข้อบกพร่องจากการตรวจพื้นที่ที่ยังไม่ปิด" value={openInspectionFindings.length} icon={Search} tone="red" />
       </div>
@@ -3031,11 +3054,12 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
   );
 }
 
-function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem }) {
+function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem, organizationId, fileUploadAllowed }) {
   const [showCatalogForm, setShowCatalogForm] = useState(false);
   const [catalogForm, setCatalogForm] = useState({ name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180" });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ model: "", standard: "", lifespanDays: "" });
+  const [docsOpenId, setDocsOpenId] = useState(null);
 
   const submitCatalog = () => {
     if (!catalogForm.name.trim()) return;
@@ -3138,6 +3162,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
             <th className="py-1.5 font-medium">ชื่อรุ่น</th>
             <th className="py-1.5 font-medium">มาตรฐาน</th>
             <th className="py-1.5 font-medium">อายุการใช้งาน</th>
+            <th className="py-1.5 font-medium">เอกสาร</th>
             <th className="py-1.5"></th>
             <th className="py-1.5"></th>
           </tr>
@@ -3145,8 +3170,10 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
         <tbody>
           {catalog.map((c) => {
             const isEditing = editingId === c.id;
+            const docStatus = docCompletenessStatus(c);
             return (
-              <tr key={c.id} className="border-t border-slate-100">
+              <Fragment key={c.id}>
+              <tr className="border-t border-slate-100">
                 <td className="py-1.5">{c.name}</td>
                 {isEditing ? (
                   <>
@@ -3175,6 +3202,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
                         <span className="text-slate-500">วัน</span>
                       </div>
                     </td>
+                    <td className="py-1.5"></td>
                     <td className="py-1.5">
                       <div className="flex gap-2">
                         <button onClick={() => saveEdit(c.id)} className="text-xs text-emerald-700 underline">บันทึก</button>
@@ -3189,6 +3217,13 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
                     <td className="py-1.5 text-slate-500">{c.standard}</td>
                     <td className="py-1.5 text-slate-500">{c.lifespanDays} วัน</td>
                     <td className="py-1.5">
+                      <button onClick={() => setDocsOpenId(docsOpenId === c.id ? null : c.id)}>
+                        <Badge tone={docStatus.complete ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}>
+                          {docStatus.complete ? "ครบ" : `ขาด ${docStatus.missing.join(", ")}`}
+                        </Badge>
+                      </button>
+                    </td>
+                    <td className="py-1.5">
                       <button onClick={() => startEdit(c)} className="text-xs text-slate-500 underline hover:text-slate-800">
                         แก้ไข
                       </button>
@@ -3199,6 +3234,55 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
                   </>
                 )}
               </tr>
+              {docsOpenId === c.id && (
+                <tr className="border-t border-slate-100 bg-slate-50">
+                  <td colSpan={6} className="py-3 px-2">
+                    <div className="grid sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 block mb-1">Spec</label>
+                        <FileUploadField
+                          value={c.specFilePath}
+                          onChange={(path) => onUpdateCatalogItem(c.id, { specFilePath: path })}
+                          organizationId={organizationId}
+                          folder="ppe-catalog-docs"
+                          kind="pdf"
+                          locked={!fileUploadAllowed}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 block mb-1">Certificate</label>
+                        <FileUploadField
+                          value={c.certificateFilePath}
+                          onChange={(path) => onUpdateCatalogItem(c.id, { certificateFilePath: path })}
+                          organizationId={organizationId}
+                          folder="ppe-catalog-docs"
+                          kind="pdf"
+                          locked={!fileUploadAllowed}
+                        />
+                        <label className="text-xs font-bold text-slate-500 block mb-1 mt-2">วันหมดอายุ Certificate</label>
+                        <input
+                          type="date"
+                          value={c.certificateExpiryDate || ""}
+                          onChange={(e) => onUpdateCatalogItem(c.id, { certificateExpiryDate: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 block mb-1">Manual (ไม่บังคับ)</label>
+                        <FileUploadField
+                          value={c.manualFilePath}
+                          onChange={(path) => onUpdateCatalogItem(c.id, { manualFilePath: path })}
+                          organizationId={organizationId}
+                          folder="ppe-catalog-docs"
+                          kind="pdf"
+                          locked={!fileUploadAllowed}
+                        />
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>
@@ -3212,7 +3296,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
   );
 }
 
-function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem }) {
+function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem, organizationId, fileUploadAllowed }) {
   const [tab, setTab] = useState("item");
   const tabs = [
     { key: "item", label: "รายงานสถานะ PPE" },
@@ -3241,7 +3325,7 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
       {tab === "item" && <PpeByItemView employees={employees} ppe={ppe} />}
       {tab === "issuance" && <PpeIssuanceView employees={employees} ppe={ppe} catalog={catalog} onAddIssuance={onAddIssuance} onDeleteIssuance={onDeleteIssuance} />}
       {tab === "catalog" && (
-        <PpeCatalogView catalog={catalog} onAddCatalogItem={onAddCatalogItem} onUpdateCatalogItem={onUpdateCatalogItem} onDeleteCatalogItem={onDeleteCatalogItem} />
+        <PpeCatalogView catalog={catalog} onAddCatalogItem={onAddCatalogItem} onUpdateCatalogItem={onUpdateCatalogItem} onDeleteCatalogItem={onDeleteCatalogItem} organizationId={organizationId} fileUploadAllowed={fileUploadAllowed} />
       )}
     </div>
   );
@@ -4695,11 +4779,12 @@ function UnsafeActsPage({ employees, locations, records, onAdd, onDelete }) {
 // Safety equipment registry + inspection history
 // ---------------------------------------------------------------
 
-function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteInspection, onDeleteEquipment }) {
+function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteInspection, onDeleteEquipment, onUpdateDocs, organizationId, fileUploadAllowed }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ result: "ผ่าน", findings: "", action: "", correctiveDeadline: "" });
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showDocs, setShowDocs] = useState(false);
   const [addForm, setAddForm] = useState({ name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "", frequency: frequencyOptions[0], lastDate: "", nextDateOverride: "" });
 
   const selected = equipment.find((e) => e.id === selectedId);
@@ -4747,6 +4832,64 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
           <MetricCard label="รอบตรวจ" value={selected.frequency} />
           <MetricCard label="ตรวจล่าสุด" value={selected.lastDate === "-" ? "-" : formatThaiDate(selected.lastDate)} />
           <MetricCard label="กำหนดครั้งถัดไป" value={selected.nextDate === "-" ? "-" : formatThaiDate(selected.nextDate)} />
+        </div>
+
+        <div>
+          <button onClick={() => setShowDocs(!showDocs)} className="flex items-center gap-2">
+            <span className="text-sm font-bold text-slate-900">เอกสาร</span>
+            {(() => {
+              const docStatus = docCompletenessStatus(selected);
+              return (
+                <Badge tone={docStatus.complete ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}>
+                  {docStatus.complete ? "ครบ" : `ขาด ${docStatus.missing.join(", ")}`}
+                </Badge>
+              );
+            })()}
+          </button>
+          {showDocs && (
+            <div className="grid sm:grid-cols-3 gap-3 mt-3 bg-slate-50 rounded-lg p-3">
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">Spec</label>
+                <FileUploadField
+                  value={selected.specFilePath}
+                  onChange={(path) => onUpdateDocs(selected.id, { specFilePath: path })}
+                  organizationId={organizationId}
+                  folder="equipment-docs"
+                  kind="pdf"
+                  locked={!fileUploadAllowed}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">Certificate</label>
+                <FileUploadField
+                  value={selected.certificateFilePath}
+                  onChange={(path) => onUpdateDocs(selected.id, { certificateFilePath: path })}
+                  organizationId={organizationId}
+                  folder="equipment-docs"
+                  kind="pdf"
+                  locked={!fileUploadAllowed}
+                />
+                <label className="text-xs font-bold text-slate-500 block mb-1 mt-2">วันหมดอายุ Certificate</label>
+                <input
+                  type="date"
+                  value={selected.certificateExpiryDate || ""}
+                  onChange={(e) => onUpdateDocs(selected.id, { certificateExpiryDate: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">Manual (ไม่บังคับ)</label>
+                <FileUploadField
+                  value={selected.manualFilePath}
+                  onChange={(path) => onUpdateDocs(selected.id, { manualFilePath: path })}
+                  organizationId={organizationId}
+                  folder="equipment-docs"
+                  kind="pdf"
+                  locked={!fileUploadAllowed}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {selected.pendingReinspectionDue && (
@@ -5044,6 +5187,7 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               <th className="px-4 py-2.5 font-bold">รอบตรวจ</th>
               <th className="px-4 py-2.5 font-bold">กำหนดถัดไป</th>
               <th className="px-4 py-2.5 font-bold">สถานะ</th>
+              <th className="px-4 py-2.5 font-bold">เอกสาร</th>
               <th className="px-4 py-2.5"></th>
               <th className="px-4 py-2.5"></th>
             </tr>
@@ -5066,6 +5210,12 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
                   )}
                 </td>
                 <td className="px-4 py-2.5"><Badge tone={statusTone(eq.status)}>{eq.status}</Badge></td>
+                <td className="px-4 py-2.5">
+                  {(() => {
+                    const docStatus = docCompletenessStatus(eq);
+                    return <Badge tone={docStatus.complete ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}>{docStatus.complete ? "ครบ" : "ไม่ครบ"}</Badge>;
+                  })()}
+                </td>
                 <td className="px-4 py-2.5 text-slate-300"><ChevronRight size={16} /></td>
                 <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
                   <ConfirmDeleteButton onConfirm={() => onDeleteEquipment(eq.id)} />
@@ -8922,7 +9072,7 @@ export default function JorPorPrototype() {
   async function fetchPpeCatalog() {
     const { data, error } = await supabase
       .from("ppe_catalog")
-      .select("id, name, model, standard_ref, lifespan_days")
+      .select("id, name, model, standard_ref, lifespan_days, spec_file_path, certificate_file_path, certificate_expiry_date, manual_file_path")
       .order("name");
     if (error) {
       console.error("fetchPpeCatalog error:", error);
@@ -8962,6 +9112,10 @@ export default function JorPorPrototype() {
         model: item.model === "-" ? null : item.model,
         standard_ref: item.standard === "-" ? null : item.standard,
         lifespan_days: item.lifespanDays,
+        spec_file_path: item.specFilePath || null,
+        certificate_file_path: item.certificateFilePath || null,
+        certificate_expiry_date: item.certificateExpiryDate || null,
+        manual_file_path: item.manualFilePath || null,
       })
       .select()
       .single();
@@ -8977,6 +9131,10 @@ export default function JorPorPrototype() {
     if (fields.model !== undefined) payload.model = fields.model === "-" ? null : fields.model;
     if (fields.standard !== undefined) payload.standard_ref = fields.standard === "-" ? null : fields.standard;
     if (fields.lifespanDays !== undefined) payload.lifespan_days = fields.lifespanDays;
+    if (fields.specFilePath !== undefined) payload.spec_file_path = fields.specFilePath || null;
+    if (fields.certificateFilePath !== undefined) payload.certificate_file_path = fields.certificateFilePath || null;
+    if (fields.certificateExpiryDate !== undefined) payload.certificate_expiry_date = fields.certificateExpiryDate || null;
+    if (fields.manualFilePath !== undefined) payload.manual_file_path = fields.manualFilePath || null;
     const { error } = await supabase.from("ppe_catalog").update(payload).eq("id", id);
     if (error) {
       alert("บันทึกไม่สำเร็จ: " + error.message);
@@ -9987,7 +10145,7 @@ export default function JorPorPrototype() {
     setEquipmentLoading(true);
     const { data: equipmentRows, error } = await supabase
       .from("safety_equipment_units")
-      .select("id, category, asset_code, name, brand, model, location, inspection_frequency, last_inspection_date, next_inspection_due, pending_reinspection_due, status")
+      .select("id, category, asset_code, name, brand, model, location, inspection_frequency, last_inspection_date, next_inspection_due, pending_reinspection_due, status, spec_file_path, certificate_file_path, certificate_expiry_date, manual_file_path")
       .eq("is_active", true)
       .order("location");
     if (error) {
@@ -10019,6 +10177,21 @@ export default function JorPorPrototype() {
     );
     setEquipmentLoading(false);
   }
+
+  // อัปเดตเอกสารแนบ (Spec/Certificate/วันหมดอายุ/Manual) ของอุปกรณ์ความปลอดภัย 1 ชิ้น
+  const updateEquipmentDocs = async (id, fields) => {
+    const payload = {};
+    if (fields.specFilePath !== undefined) payload.spec_file_path = fields.specFilePath || null;
+    if (fields.certificateFilePath !== undefined) payload.certificate_file_path = fields.certificateFilePath || null;
+    if (fields.certificateExpiryDate !== undefined) payload.certificate_expiry_date = fields.certificateExpiryDate || null;
+    if (fields.manualFilePath !== undefined) payload.manual_file_path = fields.manualFilePath || null;
+    const { error } = await supabase.from("safety_equipment_units").update(payload).eq("id", id);
+    if (error) {
+      alert("บันทึกเอกสารไม่สำเร็จ: " + error.message);
+      return;
+    }
+    setEquipmentData(equipment.map((eq) => (eq.id === id ? { ...eq, ...fields } : eq)));
+  };
 
   const addEquipment = async (unit) => {
     const { data, error } = await supabase
@@ -10348,6 +10521,7 @@ export default function JorPorPrototype() {
             currentUser={currentUser}
             safetyInspections={safetyInspections}
             banners={banners}
+            ppeCatalog={ppeCatalog}
           />
         )}
         {page === "incidents" && (
@@ -10377,6 +10551,8 @@ export default function JorPorPrototype() {
             onAddCatalogItem={addPpeCatalogItem}
             onUpdateCatalogItem={updatePpeCatalogItem}
             onDeleteCatalogItem={deletePpeCatalogItem}
+            organizationId={currentUser.organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
         {page === "chemicals" && (
@@ -10423,6 +10599,9 @@ export default function JorPorPrototype() {
             onAddEquipment={addEquipment}
             onDeleteInspection={deleteInspection}
             onDeleteEquipment={deleteEquipmentUnit}
+            onUpdateDocs={updateEquipmentDocs}
+            organizationId={currentUser.organizationId}
+            fileUploadAllowed={fileUploadAllowed}
           />
         )}
         {page === "machinery" && (
