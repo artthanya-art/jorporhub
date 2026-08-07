@@ -3056,10 +3056,18 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
 
 function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem, organizationId, fileUploadAllowed }) {
   const [showCatalogForm, setShowCatalogForm] = useState(false);
-  const [catalogForm, setCatalogForm] = useState({ name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180" });
+  const [catalogForm, setCatalogForm] = useState({
+    name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180",
+    specFilePath: null, certificateFilePath: null, certificateExpiryDate: "", manualFilePath: null,
+  });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ model: "", standard: "", lifespanDays: "" });
   const [docsOpenId, setDocsOpenId] = useState(null);
+
+  const emptyCatalogForm = {
+    name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180",
+    specFilePath: null, certificateFilePath: null, certificateExpiryDate: "", manualFilePath: null,
+  };
 
   const submitCatalog = () => {
     if (!catalogForm.name.trim()) return;
@@ -3069,8 +3077,12 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
       model: catalogForm.model || "-",
       standard: catalogForm.standard || "-",
       lifespanDays: Number(catalogForm.lifespanDays) || 180,
+      specFilePath: catalogForm.specFilePath,
+      certificateFilePath: catalogForm.certificateFilePath,
+      certificateExpiryDate: catalogForm.certificateExpiryDate || null,
+      manualFilePath: catalogForm.manualFilePath,
     });
-    setCatalogForm({ name: ppeTypeLabel[ppeTypeOptions[0]], model: "", standard: "", lifespanDays: "180" });
+    setCatalogForm(emptyCatalogForm);
     setShowCatalogForm(false);
   };
 
@@ -3143,7 +3155,49 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
               />
             </div>
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Spec</label>
+              <FileUploadField
+                value={catalogForm.specFilePath}
+                onChange={(path) => setCatalogForm({ ...catalogForm, specFilePath: path })}
+                organizationId={organizationId}
+                folder="ppe-catalog-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Certificate</label>
+              <FileUploadField
+                value={catalogForm.certificateFilePath}
+                onChange={(path) => setCatalogForm({ ...catalogForm, certificateFilePath: path })}
+                organizationId={organizationId}
+                folder="ppe-catalog-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+              <label className="text-xs font-bold text-slate-500 block mb-1 mt-2">วันหมดอายุ Certificate</label>
+              <input
+                type="date"
+                value={catalogForm.certificateExpiryDate}
+                onChange={(e) => setCatalogForm({ ...catalogForm, certificateExpiryDate: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Manual (ไม่บังคับ)</label>
+              <FileUploadField
+                value={catalogForm.manualFilePath}
+                onChange={(path) => setCatalogForm({ ...catalogForm, manualFilePath: path })}
+                organizationId={organizationId}
+                folder="ppe-catalog-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-3">
             <button onClick={() => setShowCatalogForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
               ยกเลิก
             </button>
@@ -4785,7 +4839,11 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
   const [form, setForm] = useState({ result: "ผ่าน", findings: "", action: "", correctiveDeadline: "" });
   const [showAddForm, setShowAddForm] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
-  const [addForm, setAddForm] = useState({ name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "", frequency: frequencyOptions[0], lastDate: "", nextDateOverride: "" });
+  const [addForm, setAddForm] = useState({
+    name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "",
+    frequency: frequencyOptions[0], lastDate: "", nextDateOverride: "",
+    specFilePath: null, certificateFilePath: null, certificateExpiryDate: "", manualFilePath: null,
+  });
 
   const selected = equipment.find((e) => e.id === selectedId);
 
@@ -5110,6 +5168,48 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
               {frequencyOptions.map((f) => <option key={f}>{f}</option>)}
             </select>
           </div>
+          <div className="grid sm:grid-cols-3 gap-3 mb-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Spec</label>
+              <FileUploadField
+                value={addForm.specFilePath}
+                onChange={(path) => setAddForm({ ...addForm, specFilePath: path })}
+                organizationId={organizationId}
+                folder="equipment-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Certificate</label>
+              <FileUploadField
+                value={addForm.certificateFilePath}
+                onChange={(path) => setAddForm({ ...addForm, certificateFilePath: path })}
+                organizationId={organizationId}
+                folder="equipment-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+              <label className="text-xs font-bold text-slate-500 block mb-1 mt-2">วันหมดอายุ Certificate</label>
+              <input
+                type="date"
+                value={addForm.certificateExpiryDate}
+                onChange={(e) => setAddForm({ ...addForm, certificateExpiryDate: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Manual (ไม่บังคับ)</label>
+              <FileUploadField
+                value={addForm.manualFilePath}
+                onChange={(path) => setAddForm({ ...addForm, manualFilePath: path })}
+                organizationId={organizationId}
+                folder="equipment-docs"
+                kind="pdf"
+                locked={!fileUploadAllowed}
+              />
+            </div>
+          </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-4">
             <div>
               <label className="text-xs font-bold text-slate-500 block mb-1">วันที่ตรวจล่าสุด (ถ้ามี)</label>
@@ -5158,8 +5258,16 @@ function EquipmentPage({ equipment, onAddInspection, onAddEquipment, onDeleteIns
                   status: "ปกติ",
                   pendingReinspectionDue: null,
                   history: [],
+                  specFilePath: addForm.specFilePath,
+                  certificateFilePath: addForm.certificateFilePath,
+                  certificateExpiryDate: addForm.certificateExpiryDate || null,
+                  manualFilePath: addForm.manualFilePath,
                 });
-                setAddForm({ name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "", frequency: frequencyOptions[0], lastDate: "", nextDateOverride: "" });
+                setAddForm({
+                  name: equipmentCategoryGroups[0].items[0].name, customName: "", code: "", location: "", brand: "",
+                  frequency: frequencyOptions[0], lastDate: "", nextDateOverride: "",
+                  specFilePath: null, certificateFilePath: null, certificateExpiryDate: "", manualFilePath: null,
+                });
                 setShowAddForm(false);
               }}
               className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white"
@@ -10207,6 +10315,10 @@ export default function JorPorPrototype() {
         last_inspection_date: unit.lastDate && unit.lastDate !== "-" ? unit.lastDate : null,
         next_inspection_due: unit.nextDate && unit.nextDate !== "-" ? unit.nextDate : null,
         status: "normal",
+        spec_file_path: unit.specFilePath || null,
+        certificate_file_path: unit.certificateFilePath || null,
+        certificate_expiry_date: unit.certificateExpiryDate || null,
+        manual_file_path: unit.manualFilePath || null,
       })
       .select()
       .single();
