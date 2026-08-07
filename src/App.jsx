@@ -45,12 +45,29 @@ const incidentStatusOptions = ["รายงานแล้ว", "กำลั�
 // severity/status ในหน้าจอเป็นข้อความไทย แต่ในฐานข้อมูลเป็น enum ภาษาอังกฤษ
 // (incident_severity / incident_status) จึงต้องแปลงไป-กลับทุกครั้งที่ read/write
 // ---------------------------------------------------------------
-const severityDbToUi = {
-  near_miss: "เกือบเกิดเหตุ", minor: "เล็กน้อย", moderate: "ปานกลาง", severe: "รุนแรง", fatal: "รุนแรง",
+// ระดับความรุนแรง — ระบบ Rank A/B/C ตามผลของการบาดเจ็บ (แทนที่มาตราส่วน 5 ระดับเดิม)
+const severityRankOptions = ["rank_a", "rank_b", "rank_c"];
+const severityRankLabel = {
+  rank_a: "Rank A — ตาย, พิการ, สูญเสียอวัยวะ",
+  rank_b: "Rank B — ไปรักษาที่โรงพยาบาล",
+  rank_c: "Rank C — ไปรักษาที่ห้องพยาบาล กลับทำงานต่อ",
 };
-const severityUiToDb = {
-  "เกือบเกิดเหตุ": "near_miss", "เล็กน้อย": "minor", "ปานกลาง": "moderate", "รุนแรง": "severe",
+const severityRankShort = { rank_a: "Rank A", rank_b: "Rank B", rank_c: "Rank C" };
+const severityRankTone = { rank_a: "bg-red-50 text-red-700", rank_b: "bg-amber-50 text-amber-700", rank_c: "bg-emerald-50 text-emerald-700" };
+
+// อุบัติเหตุเก่าที่บันทึกไว้ก่อนเปลี่ยนมาใช้ระบบ Rank อาจยังมีค่าความรุนแรงแบบเดิมอยู่ในฐานข้อมูล
+// (near_miss/minor/moderate/severe/fatal) — ฟังก์ชันนี้แปลงให้แสดงผลได้ทั้งค่าเก่าและค่าใหม่
+const legacySeverityDbToUi = {
+  near_miss: "เกือบเกิดเหตุ (ข้อมูลเก่า)", minor: "เล็กน้อย (ข้อมูลเก่า)",
+  moderate: "ปานกลาง (ข้อมูลเก่า)", severe: "รุนแรง (ข้อมูลเก่า)", fatal: "รุนแรง (ข้อมูลเก่า)",
 };
+function severityDisplayLabel(raw) {
+  if (severityRankShort[raw]) return severityRankShort[raw];
+  return legacySeverityDbToUi[raw] || raw;
+}
+function severityDisplayTone(raw) {
+  return severityRankTone[raw] || "bg-slate-100 text-slate-600";
+}
 const incidentStatusDbToUi = {
   reported: "รายงานแล้ว", investigating: "กำลังตรวจสอบ", corrective_action: "อยู่ระหว่างแก้ไข", closed: "ปิดเคส",
 };
@@ -65,7 +82,7 @@ function mapIncidentRow(row, injuredRows, updateRows, updatedByNameById) {
     id: row.id,
     location: row.location || "-",
     type: row.injury_type || "-",
-    severity: severityDbToUi[row.severity] || row.severity,
+    severity: row.severity,
     incidentDate: row.incident_date ? row.incident_date.slice(0, 10) : "",
     incidentTime: row.incident_time ? row.incident_time.slice(0, 5) : "",
     department: row.department || "-",
@@ -1608,17 +1625,134 @@ function Dashboard({
 // Incidents
 // ---------------------------------------------------------------
 
+// รายชื่อผู้เกี่ยวข้องที่มักต้องรับทราบรายงานอุบัติเหตุ — ติ๊กเลือกแล้วกรอกอีเมลแต่ละคนได้เอง
+// (ไม่ได้บันทึกอีเมลไว้ถาวรในระบบ ต้องกรอกใหม่ทุกครั้งที่ส่งรายงาน)
+const INCIDENT_REPORT_ROLES = [
+  { key: "safety_supervisor", label: "จป.หัวหน้างาน (Safety Level Supervisor)" },
+  { key: "dept_supervisor", label: "หัวหน้าแผนก (Supervisor)" },
+  { key: "dept_manager", label: "ผู้จัดการแผนก (Manager)" },
+  { key: "safety_officer", label: "จป.วิชาชีพ (Safety Officer)" },
+  { key: "hr", label: "แผนกบุคคล (HR)" },
+];
+
+// เปิดโปรแกรมอีเมลของผู้ใช้ (ผ่านลิงก์ mailto:) พร้อมหัวเรื่อง/เนื้อหาที่กรอกไว้ล่วงหน้าให้แล้ว
+// ระบบยังไม่มีการส่งอีเมลจากฝั่งเซิร์ฟเวอร์อัตโนมัติ ผู้ใช้ต้องกดส่งเองในโปรแกรมอีเมลอีกครั้ง
+function IncidentReportEmailModal({ data, employees, onClose }) {
+  const [recipients, setRecipients] = useState(
+    Object.fromEntries(INCIDENT_REPORT_ROLES.map((r) => [r.key, { checked: false, email: "" }]))
+  );
+  const [customEmails, setCustomEmails] = useState([""]);
+
+  const toggleRole = (key) => setRecipients({ ...recipients, [key]: { ...recipients[key], checked: !recipients[key].checked } });
+  const setRoleEmail = (key, email) => setRecipients({ ...recipients, [key]: { ...recipients[key], email } });
+  const setCustomEmail = (idx, val) => setCustomEmails(customEmails.map((e, i) => (i === idx ? val : e)));
+  const addCustomEmail = () => setCustomEmails([...customEmails, ""]);
+  const removeCustomEmail = (idx) => setCustomEmails(customEmails.filter((_, i) => i !== idx));
+
+  const collectedEmails = [
+    ...INCIDENT_REPORT_ROLES.filter((r) => recipients[r.key].checked && recipients[r.key].email.trim()).map((r) => recipients[r.key].email.trim()),
+    ...customEmails.map((e) => e.trim()).filter(Boolean),
+  ];
+
+  const injuredList = data.injuredEmployees
+    .map((e) => `- ${employees.find((emp) => emp.id === e.employeeId)?.name ?? "-"} (${e.bodyPart !== "-" ? e.bodyPart : "ไม่ระบุ"}, หยุดงาน ${e.lostWorkdays} วัน)`)
+    .join("\n");
+
+  const subject = `รายงานอุบัติเหตุ: ${data.location} (${formatThaiDate(data.incidentDate)})`;
+  const body =
+    `รายงานอุบัติเหตุ\n` +
+    `วันที่เกิดเหตุ: ${formatThaiDate(data.incidentDate)} ${data.incidentTime ? data.incidentTime + " น." : ""}\n` +
+    `สถานที่: ${data.location}\n` +
+    `แผนก: ${data.department || "-"}\n` +
+    `ประเภทเหตุการณ์: ${data.type}\n` +
+    `ระดับความรุนแรง: ${severityRankLabel[data.severity] || data.severity}\n` +
+    `รายละเอียดเหตุการณ์: ${data.description || "-"}\n` +
+    (injuredList ? `\nผู้บาดเจ็บ:\n${injuredList}\n` : "\n") +
+    `\nการปฐมพยาบาลเบื้องต้น: ${data.firstAidGiven || "-"}\n` +
+    `สาเหตุเบื้องต้น: ${data.probableCause || "-"}\n` +
+    `\nผู้แจ้ง: ${data.reporterName || "-"} (${data.reporterPhone || "-"})\n` +
+    `\n— ส่งจากระบบ JorPorHub`;
+
+  const mailtoHref = `mailto:${collectedEmails.join(",")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-lg font-bold text-slate-900">ส่งรายงานอุบัติเหตุ</p>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          บันทึกอุบัติเหตุสำเร็จแล้ว เลือกผู้รับที่ต้องการแจ้งให้รับทราบ ระบบจะเปิดโปรแกรมอีเมลของคุณ
+          พร้อมกรอกหัวเรื่อง/เนื้อหาไว้ล่วงหน้าให้ กดส่งอีกครั้งในโปรแกรมอีเมลเพื่อยืนยันการส่งจริง
+        </p>
+
+        <p className="text-xs font-bold text-slate-500 mb-2">ผู้เกี่ยวข้อง</p>
+        <div className="space-y-2 mb-3">
+          {INCIDENT_REPORT_ROLES.map((r) => (
+            <div key={r.key} className="flex items-center gap-2">
+              <input type="checkbox" checked={recipients[r.key].checked} onChange={() => toggleRole(r.key)} />
+              <span className="text-sm text-slate-700 w-56 shrink-0">{r.label}</span>
+              <input
+                type="email"
+                value={recipients[r.key].email}
+                onChange={(e) => setRoleEmail(r.key, e.target.value)}
+                placeholder="อีเมลผู้รับ"
+                disabled={!recipients[r.key].checked}
+                className="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-300"
+              />
+            </div>
+          ))}
+        </div>
+
+        <p className="text-xs font-bold text-slate-500 mb-2">อื่นๆ ระบุ</p>
+        <div className="space-y-2 mb-4">
+          {customEmails.map((email, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setCustomEmail(idx, e.target.value)}
+                placeholder="อีเมลผู้รับ"
+                className="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+              />
+              {customEmails.length > 1 && (
+                <button onClick={() => removeCustomEmail(idx)} className="text-xs text-slate-400 underline hover:text-red-600">ลบ</button>
+              )}
+            </div>
+          ))}
+          <button onClick={addCustomEmail} className="text-xs text-slate-500 underline hover:text-slate-700">+ เพิ่มอีเมล</button>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
+            ปิด (ไม่ส่งอีเมล)
+          </button>
+          <a
+            href={collectedEmails.length > 0 ? mailtoHref : undefined}
+            onClick={(e) => { if (collectedEmails.length === 0) e.preventDefault(); else onClose(); }}
+            className={`text-sm px-3 py-2 rounded-lg text-center ${collectedEmails.length > 0 ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}
+          >
+            เปิดโปรแกรมอีเมลเพื่อส่ง
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProgress, onDeleteIncident, onAddInjured, onUpdateInjured, onRemoveInjured, locations, employees, organizationId, fileUploadAllowed }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [locationMode, setLocationMode] = useState("select"); // "select" | "custom"
   const [form, setForm] = useState({
-    location: "", type: "หกล้ม", severity: "ปานกลาง", description: "",
+    location: "", type: "หกล้ม", severity: "rank_c", description: "",
     incidentDate: todayIso(), incidentTime: "", department: "",
     firstAidGiven: "", probableCause: "", reporterName: "", reporterPhone: "",
     injuredEmployees: [], photoPath: null,
   });
   const [newInjured, setNewInjured] = useState({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
+  const [reportModalData, setReportModalData] = useState(null); // snapshot ของฟอร์มไว้ประกอบอีเมล (เปิดหลังบันทึกสำเร็จ)
   const positionOf = (id) => employees.find((e) => e.id === id)?.position ?? "-";
   const departmentOf = (id) => employees.find((e) => e.id === id)?.department ?? "-";
   const nameOfEmp = (id) => employees.find((e) => e.id === id)?.name ?? "-";
@@ -1670,13 +1804,21 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
       photoPath: form.photoPath,
     });
     setForm({
-      location: "", type: "หกล้ม", severity: "ปานกลาง", description: "",
+      location: "", type: "หกล้ม", severity: "rank_c", description: "",
       incidentDate: todayIso(), incidentTime: "", department: "",
       firstAidGiven: "", probableCause: "", reporterName: "", reporterPhone: "",
       injuredEmployees: [], photoPath: null,
     });
     setNewInjured({ employeeId: "", lostWorkdays: "0", injuryType: "", bodyPart: "" });
     setShowForm(false);
+  };
+
+  // เหมือน submit() ทุกอย่าง แต่เก็บ snapshot ของข้อมูลไว้ก่อนฟอร์มจะถูกล้าง เพื่อเอาไปสร้างอีเมลรายงาน
+  const saveAndReport = () => {
+    if (!form.location.trim() || !form.incidentDate) return;
+    const snapshot = { ...form };
+    submit();
+    setReportModalData(snapshot);
   };
 
   const selected = incidents.find((i) => i.id === selectedId);
@@ -1802,16 +1944,16 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
           </div>
           <div className="mb-3">
             <label className="text-xs font-bold text-slate-500 block mb-1">ระดับความรุนแรง</label>
-            <div className="flex gap-2 flex-wrap">
-              {["เกือบเกิดเหตุ", "เล็กน้อย", "ปานกลาง", "รุนแรง"].map((s) => (
+            <div className="flex flex-col gap-2">
+              {severityRankOptions.map((s) => (
                 <button
                   key={s}
                   onClick={() => setForm({ ...form, severity: s })}
-                  className={`text-xs px-3 py-1.5 rounded-lg border ${
+                  className={`text-xs px-3 py-2 rounded-lg border text-left ${
                     form.severity === s ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"
                   }`}
                 >
-                  {s}
+                  {severityRankLabel[s]}
                 </button>
               ))}
             </div>
@@ -1965,11 +2107,18 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
             <button onClick={() => setShowForm(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600">
               ยกเลิก
             </button>
-            <button onClick={submit} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
-              ส่งรายงาน
+            <button onClick={submit} className="text-sm px-3 py-2 rounded-lg border border-slate-400 text-slate-700">
+              บันทึก
+            </button>
+            <button onClick={saveAndReport} className="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white">
+              รายงาน (บันทึกและส่งรายงาน)
             </button>
           </div>
         </Card>
+      )}
+
+      {reportModalData && (
+        <IncidentReportEmailModal data={reportModalData} employees={employees} onClose={() => setReportModalData(null)} />
       )}
 
       <Card className="p-0 overflow-hidden">
@@ -1996,7 +2145,7 @@ function IncidentsPage({ incidents, onAdd, onUpdate, onAddProgress, onRemoveProg
               >
                 <td className="px-4 py-2.5">{inc.location}</td>
                 <td className="px-4 py-2.5">{inc.type}</td>
-                <td className="px-4 py-2.5 text-slate-500">{inc.severity}</td>
+                <td className="px-4 py-2.5 text-slate-500"><Badge tone={severityDisplayTone(inc.severity)}>{severityDisplayLabel(inc.severity)}</Badge></td>
                 <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(inc.incidentDate)}</td>
                 <td className="px-4 py-2.5">
                   {incidentHasLTI(inc) ? (
@@ -2104,7 +2253,7 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
           <h1 className="text-lg font-bold text-slate-900">{incident.location} · {incident.type}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {formatThaiDate(incident.incidentDate)}
-            {incident.incidentTime ? ` ${incident.incidentTime} น.` : ""} · ความรุนแรง {incident.severity}
+            {incident.incidentTime ? ` ${incident.incidentTime} น.` : ""} · ความรุนแรง {severityDisplayLabel(incident.severity)}
             {incident.department !== "-" ? ` · ${incident.department}` : ""}
           </p>
         </div>
@@ -2180,9 +2329,12 @@ function IncidentDetail({ incident, employees, onBack, onUpdate, onAddProgress, 
               <select
                 value={edit.severity}
                 onChange={(e) => setEdit({ ...edit, severity: e.target.value })}
-                className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
               >
-                {["เกือบเกิดเหตุ", "เล็กน้อย", "ปานกลาง", "รุนแรง"].map((s) => <option key={s}>{s}</option>)}
+                {severityRankOptions.map((s) => <option key={s} value={s}>{severityRankLabel[s]}</option>)}
+                {!severityRankOptions.includes(edit.severity) && (
+                  <option value={edit.severity}>{severityDisplayLabel(edit.severity)}</option>
+                )}
               </select>
             </div>
             <div>
@@ -4075,7 +4227,7 @@ function GovReportsPage({ orgProfile, onUpdateOrgProfile, workingHours, onUpsert
         "แผนก/หน่วยงาน": inc.department !== "-" ? inc.department : "",
         "สถานที่เกิดเหตุ": inc.location,
         "ประเภทเหตุการณ์": inc.type,
-        "ระดับความรุนแรง": inc.severity,
+        "ระดับความรุนแรง": severityRankLabel[inc.severity] || inc.severity,
         "สาเหตุเบื้องต้น": inc.probableCause !== "-" ? inc.probableCause : "",
         "การปฐมพยาบาล/รักษา": inc.firstAidGiven !== "-" ? inc.firstAidGiven : "",
         "มาตรการแก้ไข/ป้องกัน": latestUpdate ? latestUpdate.note : "",
@@ -6596,7 +6748,7 @@ function LocationDetail({ location, incidents, measurements, safetyInspections, 
                   <tr key={inc.id} className="border-t border-slate-100">
                     <td className="px-4 py-2.5 text-slate-500">{formatThaiDate(inc.incidentDate)}</td>
                     <td className="px-4 py-2.5">{inc.type}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{inc.severity}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{severityDisplayLabel(inc.severity)}</td>
                     <td className="px-4 py-2.5">
                       {incidentHasLTI(inc) ? (
                         <span className="text-red-600">{incidentTotalLostWorkdays(inc)} วัน (LTI)</span>
@@ -8575,7 +8727,7 @@ export default function JorPorPrototype() {
         reported_by: currentUser.id,
         location: inc.location,
         injury_type: inc.type,
-        severity: severityUiToDb[inc.severity] || "minor",
+        severity: inc.severity || "rank_c",
         incident_date: inc.incidentDate,
         incident_time: inc.incidentTime || null,
         department: inc.department === "-" ? null : inc.department,
@@ -8621,7 +8773,7 @@ export default function JorPorPrototype() {
   const updateIncident = async (incidentId, fields) => {
     const payload = {};
     if (fields.location !== undefined) payload.location = fields.location;
-    if (fields.severity !== undefined) payload.severity = severityUiToDb[fields.severity] || fields.severity;
+    if (fields.severity !== undefined) payload.severity = fields.severity;
     if (fields.description !== undefined) payload.description = fields.description;
     if (fields.status !== undefined) payload.status = incidentStatusUiToDb[fields.status] || fields.status;
     if (fields.incidentTime !== undefined) payload.incident_time = fields.incidentTime || null;
