@@ -2873,7 +2873,7 @@ function NoncomplianceView({ employees, locations, records, onAdd, onDelete }) {
   );
 }
 
-function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance }) {
+function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onGoToEmployee }) {
   const [form, setForm] = useState({
     employeeId: employees[0]?.id ?? "", catalogId: catalog[0]?.id ?? "",
     quantity: "1", receivedDate: todayIso(), reason: "initial_issue",
@@ -3032,7 +3032,11 @@ function PpeIssuanceView({ employees, ppe, catalog, onAddIssuance, onDeleteIssua
                 <tbody>
                   {sortedPpe.map((p) => (
                     <tr key={p.id} className="border-t border-slate-100">
-                      <td className="px-4 py-2.5">{nameOf(p.employeeId)}</td>
+                      <td className="px-4 py-2.5">
+                        <button onClick={() => onGoToEmployee(p.employeeId)} className="text-blue-700 underline hover:text-blue-900">
+                          {nameOf(p.employeeId)}
+                        </button>
+                      </td>
                       <td className="px-4 py-2.5">{p.name}</td>
                       <td className="px-4 py-2.5 text-slate-500">{p.standard}</td>
                       <td className="px-4 py-2.5 text-slate-500">{p.quantity}</td>
@@ -3350,7 +3354,7 @@ function PpeCatalogView({ catalog, onAddCatalogItem, onUpdateCatalogItem, onDele
   );
 }
 
-function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem, organizationId, fileUploadAllowed }) {
+function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onAddCatalogItem, onUpdateCatalogItem, onDeleteCatalogItem, organizationId, fileUploadAllowed, onGoToEmployee }) {
   const [tab, setTab] = useState("item");
   const tabs = [
     { key: "item", label: "รายงานสถานะ PPE" },
@@ -3377,7 +3381,7 @@ function PpePage({ employees, ppe, catalog, onAddIssuance, onDeleteIssuance, onA
       </div>
 
       {tab === "item" && <PpeByItemView employees={employees} ppe={ppe} />}
-      {tab === "issuance" && <PpeIssuanceView employees={employees} ppe={ppe} catalog={catalog} onAddIssuance={onAddIssuance} onDeleteIssuance={onDeleteIssuance} />}
+      {tab === "issuance" && <PpeIssuanceView employees={employees} ppe={ppe} catalog={catalog} onAddIssuance={onAddIssuance} onDeleteIssuance={onDeleteIssuance} onGoToEmployee={onGoToEmployee} />}
       {tab === "catalog" && (
         <PpeCatalogView catalog={catalog} onAddCatalogItem={onAddCatalogItem} onUpdateCatalogItem={onUpdateCatalogItem} onDeleteCatalogItem={onDeleteCatalogItem} organizationId={organizationId} fileUploadAllowed={fileUploadAllowed} />
       )}
@@ -5992,9 +5996,9 @@ function EmployeeDetail({ employee, ppe, noncompliance, incidents, trainingRecor
   );
 }
 
-function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, trainingRecords, trainingCourses, employeeLimit, onAdd, onAddMany, onDelete, onUpdate }) {
+function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, trainingRecords, trainingCourses, employeeLimit, onAdd, onAddMany, onDelete, onUpdate, initialSelectedId, onClearFocus }) {
   const [showForm, setShowForm] = useState(false);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(initialSelectedId || null);
   const [form, setForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "", isJorporManagement: false, isJorporSupervisor: false, isSafetyCommittee: false });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ code: "", name: "", position: "", department: "", primaryLocationId: "", isJorporManagement: false, isJorporSupervisor: false, isSafetyCommittee: false });
@@ -6003,6 +6007,11 @@ function EmployeesPage({ employees, locations, ppe, noncompliance, incidents, tr
 
   const atLimit = employeeLimit != null && employees.length >= employeeLimit;
   const locationName = (id) => locations.find((l) => l.id === id)?.name ?? "ยังไม่ระบุ";
+
+  useEffect(() => {
+    if (initialSelectedId && onClearFocus) onClearFocus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const submit = () => {
     if (!form.name.trim()) return;
@@ -8775,6 +8784,11 @@ export default function JorPorPrototype() {
   const [adminView, setAdminView] = useState("users");
 
   const [page, setPage] = useState("dashboard");
+  const [employeeFocusId, setEmployeeFocusId] = useState(null); // ใช้ตอนคลิกลิงก์ชื่อพนักงานจากหน้าอื่น เพื่อเด้งตรงไปหน้ารายละเอียดพนักงานคนนั้น
+  const goToEmployee = (id) => {
+    setEmployeeFocusId(id);
+    setPage("employees");
+  };
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [equipmentGroupOpen, setEquipmentGroupOpen] = useState(false);
   const [tenantStore, setTenantStore] = useState(initialTenantStore);
@@ -10665,6 +10679,7 @@ export default function JorPorPrototype() {
             onDeleteCatalogItem={deletePpeCatalogItem}
             organizationId={currentUser.organizationId}
             fileUploadAllowed={fileUploadAllowed}
+            onGoToEmployee={goToEmployee}
           />
         )}
         {page === "chemicals" && (
@@ -10757,6 +10772,8 @@ export default function JorPorPrototype() {
             onAddMany={addManyEmployees}
             onDelete={deleteEmployee}
             onUpdate={updateEmployee}
+            initialSelectedId={employeeFocusId}
+            onClearFocus={() => setEmployeeFocusId(null)}
           />
         )}
         {page === "environmental" && (
